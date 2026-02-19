@@ -66,6 +66,7 @@ export class AccessibilityBridge {
 
   /**
    * Invoke an action on an element (click, set value, etc.)
+   * Auto-discovers processId by finding the element first.
    */
   async invokeElement(opts: {
     name?: string;
@@ -73,8 +74,27 @@ export class AccessibilityBridge {
     controlType?: string;
     action: 'click' | 'set-value' | 'get-value' | 'focus' | 'expand' | 'collapse';
     value?: string;
+    processId?: number;
   }): Promise<{ success: boolean; value?: string; error?: string }> {
-    const args: string[] = ['-Action', opts.action];
+    let processId = opts.processId;
+
+    // Auto-discover processId if not provided
+    if (!processId) {
+      const elements = await this.findElement({
+        name: opts.name,
+        automationId: opts.automationId,
+        controlType: opts.controlType,
+      });
+      if (elements.length === 0) {
+        return { success: false, error: `Element not found: ${opts.name || opts.automationId}` };
+      }
+      processId = (elements[0] as any).processId;
+      if (!processId) {
+        return { success: false, error: 'Could not determine processId for element' };
+      }
+    }
+
+    const args: string[] = ['-Action', opts.action, '-ProcessId', String(processId)];
     if (opts.name) args.push('-Name', opts.name);
     if (opts.automationId) args.push('-AutomationId', opts.automationId);
     if (opts.controlType) args.push('-ControlType', opts.controlType);
@@ -83,21 +103,42 @@ export class AccessibilityBridge {
   }
 
   /**
-   * Get a text summary of the UI tree for the AI.
-   * Returns a compact, readable representation of what's on screen.
+   * Get a text summary of the UI for the AI.
+   * Includes windows list and taskbar buttons (always useful).
+   * Optionally includes focused window UI tree.
    */
-  async getScreenContext(processId?: number): Promise<string> {
+  async getScreenContext(focusedProcessId?: number): Promise<string> {
     try {
       const windows = await this.getWindows();
-      let context = `Open windows:\n`;
+      let context = `WINDOWS:\n`;
       for (const w of windows) {
-        context += `  - [${w.processName}] "${w.title}" (pid:${w.processId}${w.isMinimized ? ', minimized' : ''})\n`;
+        context += `  ${w.isMinimized ? '🔽' : '🟢'} [${w.processName}] "${w.title}" pid:${w.processId}`;
+        if (!w.isMinimized) context += ` at (${w.bounds.x},${w.bounds.y}) ${w.bounds.width}x${w.bounds.height}`;
+        context += `\n`;
       }
 
-      if (processId) {
-        const tree = await this.getUITree(processId, 2);
-        context += `\nUI elements for pid ${processId}:\n`;
-        context += this.formatTree(tree, '  ');
+      // Always include taskbar buttons (useful for launching/switching apps)
+      try {
+        const taskbarButtons = await this.findElement({ controlType: 'Button' });
+        // Filter to taskbar buttons only (from explorer process)
+        const tbButtons = taskbarButtons.filter((b: any) => 
+          b.processId === 6664 && b.className?.includes('Taskbar')
+        );
+        if (tbButtons.length > 0) {
+          context += `\nTASKBAR APPS:\n`;
+          for (const b of tbButtons) {
+            context += `  📌 "${b.name}" id:${(b as any).automationId} at (${b.bounds.x},${b.bounds.y})\n`;
+          }
+        }
+      } catch { /* taskbar query failed, skip */ }
+
+      // Include focused window's UI tree if provided
+      if (focusedProcessId) {
+        try {
+          const tree = await this.getUITree(focusedProcessId, 2);
+          context += `\nFOCUSED WINDOW UI TREE (pid:${focusedProcessId}):\n`;
+          context += this.formatTree(Array.isArray(tree) ? tree : [tree], '  ');
+        } catch { /* tree query failed, skip */ }
       }
 
       return context;
