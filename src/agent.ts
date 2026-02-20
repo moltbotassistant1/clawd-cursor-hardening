@@ -121,8 +121,11 @@ export class Agent {
           timestamp: Date.now(),
         });
 
-        // Brief pause to let the OS catch up
-        await this.delay(300);
+        // Wait longer after app launches to let them fully load
+        const isLaunch = routeResult.description.toLowerCase().includes('launch') || 
+                         routeResult.description.toLowerCase().includes('opened') ||
+                         routeResult.description.toLowerCase().includes('focused');
+        await this.delay(isLaunch ? 2000 : 500);
         continue;
       }
 
