@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clawd Cursor — AI Desktop Agent</title>
+    <meta name="description" content="AI desktop agent that uses screen reader APIs instead of just computer vision. 80% of tasks need zero LLM calls. 6x faster, 30x cheaper.">
+    <meta property="og:title" content="Clawd Cursor — AI Desktop Agent">
+    <meta property="og:description" content="Control your desktop with AI — using screen reader APIs, not just screenshots. 80% of tasks need zero LLM calls.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://clawdcursor.com">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐾</text></svg>">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --bg: #0a0a1a;
+            --bg2: #111127;
+            --bg3: #1a1a3e;
+            --text: #e2e8f0;
+            --text2: #94a3b8;
+            --accent: #10b981;
+            --accent2: #34d399;
+            --blue: #3b82f6;
+            --red: #f87171;
+            --orange: #f97316;
+            --purple: #a78bfa;
+            --border: #2d3748;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Glow effect */
+        .glow {
+            position: fixed;
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(16,185,129,0.08) 0%, transparent 70%);
+            pointer-events: none;
+            top: -200px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 0;
+        }
+
+        /* Nav */
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            z-index: 100;
+            background: rgba(10,10,26,0.85);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            padding: 0 2rem;
+        }
+        .nav-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 64px;
+        }
+        .logo {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .logo span { font-size: 1.5rem; }
+        .nav-links { display: flex; gap: 2rem; align-items: center; }
+        .nav-links a {
+            color: var(--text2);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.2s;
+        }
+        .nav-links a:hover { color: var(--text); }
+        .nav-btn {
+            background: var(--accent);
+            color: #000;
+            padding: 8px 20px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-decoration: none;
+            transition: opacity 0.2s;
+        }
+        .nav-btn:hover { opacity: 0.9; }
+
+        /* Hero */
+        .hero {
+            padding: 160px 2rem 100px;
+            text-align: center;
+            position: relative;
+        }
+        .hero-badge {
+            display: inline-block;
+            background: rgba(16,185,129,0.1);
+            border: 1px solid rgba(16,185,129,0.3);
+            color: var(--accent2);
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            margin-bottom: 24px;
+        }
+        .hero h1 {
+            font-size: clamp(2.5rem, 6vw, 4.5rem);
+            font-weight: 800;
+            line-height: 1.1;
+            margin-bottom: 24px;
+            background: linear-gradient(135deg, #fff 0%, #94a3b8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .hero h1 em {
+            font-style: normal;
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .hero p {
+            font-size: 1.25rem;
+            color: var(--text2);
+            max-width: 650px;
+            margin: 0 auto 40px;
+        }
+        .hero-buttons {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .btn-primary {
+            background: var(--accent);
+            color: #000;
+            padding: 14px 32px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 1rem;
+            text-decoration: none;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(16,185,129,0.3); }
+        .btn-secondary {
+            background: var(--bg3);
+            color: var(--text);
+            padding: 14px 32px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1rem;
+            text-decoration: none;
+            border: 1px solid var(--border);
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-secondary:hover { border-color: var(--text2); transform: translateY(-2px); }
+
+        /* Stats bar */
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 60px;
+            padding: 60px 2rem;
+            flex-wrap: wrap;
+        }
+        .stat {
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: var(--accent);
+        }
+        .stat-label {
+            font-size: 0.9rem;
+            color: var(--text2);
+            margin-top: 4px;
+        }
+
+        /* Sections */
+        section {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 80px 2rem;
+        }
+        .section-label {
+            color: var(--accent);
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 12px;
+        }
+        section h2 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin-bottom: 16px;
+        }
+        section > p {
+            color: var(--text2);
+            font-size: 1.1rem;
+            max-width: 700px;
+            margin-bottom: 48px;
+        }
+
+        /* Problem/Solution */
+        .compare-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+        @media (max-width: 768px) {
+            .compare-grid { grid-template-columns: 1fr; }
+            .stats { gap: 30px; }
+            .nav-links { display: none; }
+        }
+        .compare-card {
+            padding: 32px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+        .compare-card.old {
+            background: linear-gradient(135deg, rgba(248,113,113,0.05) 0%, var(--bg2) 100%);
+            border-color: rgba(248,113,113,0.2);
+        }
+        .compare-card.new {
+            background: linear-gradient(135deg, rgba(16,185,129,0.05) 0%, var(--bg2) 100%);
+            border-color: rgba(16,185,129,0.2);
+        }
+        .compare-card h3 {
+            font-size: 1.3rem;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .compare-card.old h3 { color: var(--red); }
+        .compare-card.new h3 { color: var(--accent2); }
+        .compare-card ol, .compare-card ul {
+            padding-left: 20px;
+            color: var(--text2);
+        }
+        .compare-card li { margin-bottom: 8px; }
+        .compare-stats {
+            margin-top: 24px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 24px;
+        }
+        .compare-stat-val {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+        .compare-card.old .compare-stat-val { color: var(--red); }
+        .compare-card.new .compare-stat-val { color: var(--accent); }
+        .compare-stat-label { font-size: 0.8rem; color: var(--text2); }
+
+        /* Pipeline */
+        .pipeline {
+            display: flex;
+            gap: 0;
+            align-items: stretch;
+            margin-top: 48px;
+        }
+        @media (max-width: 768px) {
+            .pipeline { flex-direction: column; }
+            .pipeline-arrow { transform: rotate(90deg); padding: 10px 0; }
+        }
+        .pipeline-step {
+            flex: 1;
+            padding: 28px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--bg2);
+            position: relative;
+        }
+        .pipeline-step.active {
+            border-color: rgba(16,185,129,0.4);
+            background: linear-gradient(135deg, rgba(16,185,129,0.08) 0%, var(--bg2) 100%);
+        }
+        .pipeline-num {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.9rem;
+            margin-bottom: 12px;
+        }
+        .pipeline-step:nth-child(1) .pipeline-num { background: var(--blue); color: #fff; }
+        .pipeline-step:nth-child(3) .pipeline-num { background: var(--accent); color: #000; }
+        .pipeline-step:nth-child(5) .pipeline-num { background: var(--orange); color: #000; }
+        .pipeline-step h4 { font-size: 1.1rem; margin-bottom: 8px; }
+        .pipeline-step p { color: var(--text2); font-size: 0.9rem; }
+        .pipeline-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            margin-top: 12px;
+        }
+        .badge-green { background: rgba(16,185,129,0.15); color: var(--accent2); }
+        .badge-orange { background: rgba(249,115,22,0.15); color: var(--orange); }
+        .pipeline-arrow {
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            color: var(--text2);
+            font-size: 1.5rem;
+        }
+
+        /* Features grid */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+        }
+        @media (max-width: 768px) {
+            .features-grid { grid-template-columns: 1fr; }
+        }
+        .feature-card {
+            padding: 28px;
+            border-radius: 12px;
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            transition: border-color 0.2s;
+        }
+        .feature-card:hover { border-color: var(--accent); }
+        .feature-icon {
+            font-size: 2rem;
+            margin-bottom: 16px;
+        }
+        .feature-card h4 {
+            font-size: 1.1rem;
+            margin-bottom: 8px;
+        }
+        .feature-card p {
+            color: var(--text2);
+            font-size: 0.9rem;
+        }
+
+        /* Code block */
+        .code-section {
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            margin-top: 48px;
+        }
+        .code-header {
+            background: var(--bg3);
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+        .code-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        .code-dot.red { background: #ff5f57; }
+        .code-dot.yellow { background: #ffbd2e; }
+        .code-dot.green { background: #28c840; }
+        .code-header span {
+            margin-left: 12px;
+            color: var(--text2);
+            font-size: 0.85rem;
+        }
+        pre {
+            padding: 24px;
+            overflow-x: auto;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 0.9rem;
+            line-height: 1.7;
+        }
+        code { color: var(--text); }
+        .code-comment { color: #6b7280; }
+        .code-string { color: var(--accent2); }
+        .code-cmd { color: var(--blue); }
+
+        /* Safety */
+        .safety-tiers {
+            display: flex;
+            gap: 24px;
+            margin-top: 32px;
+        }
+        @media (max-width: 768px) {
+            .safety-tiers { flex-direction: column; }
+        }
+        .safety-tier {
+            flex: 1;
+            padding: 24px;
+            border-radius: 12px;
+            background: var(--bg2);
+        }
+        .safety-tier.auto { border-left: 4px solid #4ade80; }
+        .safety-tier.preview { border-left: 4px solid #facc15; }
+        .safety-tier.confirm { border-left: 4px solid #f87171; }
+        .safety-tier h4 { margin-bottom: 8px; }
+        .safety-tier p { color: var(--text2); font-size: 0.9rem; }
+
+        /* CTA */
+        .cta {
+            text-align: center;
+            padding: 100px 2rem;
+            position: relative;
+        }
+        .cta h2 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin-bottom: 16px;
+        }
+        .cta p {
+            color: var(--text2);
+            font-size: 1.1rem;
+            margin-bottom: 32px;
+        }
+
+        /* Footer */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 40px 2rem;
+            text-align: center;
+            color: var(--text2);
+            font-size: 0.85rem;
+        }
+        footer a { color: var(--accent); text-decoration: none; }
+        footer a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="glow"></div>
+
+    <nav>
+        <div class="nav-inner">
+            <a href="/" class="logo"><span>🐾</span> Clawd Cursor</a>
+            <div class="nav-links">
+                <a href="#how-it-works">How It Works</a>
+                <a href="#features">Features</a>
+                <a href="#install">Install</a>
+                <a href="https://github.com/AmrDab/clawd-cursor" class="nav-btn">GitHub →</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="hero">
+        <div class="hero-badge">🚀 Open Source — MIT License</div>
+        <h1>AI Desktop Agent<br>that thinks like a <em>screen reader</em></h1>
+        <p>Control your desktop with AI — using Windows UI Automation instead of just screenshots. 80% of tasks need zero LLM calls. 6x faster. 30x cheaper.</p>
+        <div class="hero-buttons">
+            <a href="https://github.com/AmrDab/clawd-cursor" class="btn-primary">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+                View on GitHub
+            </a>
+            <a href="#install" class="btn-secondary">Quick Start →</a>
+        </div>
+    </div>
+
+    <div class="stats">
+        <div class="stat">
+            <div class="stat-value">6x</div>
+            <div class="stat-label">Faster than vision-only agents</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value">30x</div>
+            <div class="stat-label">Cheaper per task</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value">80%</div>
+            <div class="stat-label">Tasks need zero LLM calls</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value">~2s</div>
+            <div class="stat-label">Average task completion</div>
+        </div>
+    </div>
+
+    <!-- Problem vs Solution -->
+    <section>
+        <div class="section-label">The Problem</div>
+        <h2>Vision-only agents are slow & expensive</h2>
+        <p>Most AI desktop agents screenshot → send to LLM → get coordinates → click. Repeat 10-20 times per task. There's a better way.</p>
+        
+        <div class="compare-grid">
+            <div class="compare-card old">
+                <h3>❌ Pure Vision Agents</h3>
+                <ol>
+                    <li>Screenshot the entire screen</li>
+                    <li>Send to GPT-4o/Claude ($$)</li>
+                    <li>Get back pixel coordinates</li>
+                    <li>Click at (x, y) — hope it's right</li>
+                    <li>Screenshot again... repeat 10x</li>
+                </ol>
+                <div class="compare-stats">
+                    <div>
+                        <div class="compare-stat-val">~12s</div>
+                        <div class="compare-stat-label">Per task</div>
+                    </div>
+                    <div>
+                        <div class="compare-stat-val">~15,000</div>
+                        <div class="compare-stat-label">Tokens used</div>
+                    </div>
+                </div>
+            </div>
+            <div class="compare-card new">
+                <h3>✅ Clawd Cursor</h3>
+                <ol>
+                    <li>Parse task into subtasks (1 text call)</li>
+                    <li>Query UI Automation tree</li>
+                    <li>Find element by name — click directly</li>
+                    <li>No screenshots needed for 80% of tasks</li>
+                    <li>LLM vision only as fallback</li>
+                </ol>
+                <div class="compare-stats">
+                    <div>
+                        <div class="compare-stat-val">~2s</div>
+                        <div class="compare-stat-label">Per task</div>
+                    </div>
+                    <div>
+                        <div class="compare-stat-val">~500</div>
+                        <div class="compare-stat-label">Tokens used</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works -->
+    <section id="how-it-works">
+        <div class="section-label">Architecture</div>
+        <h2>Parse → Accessibility → Action</h2>
+        <p>A three-stage pipeline that tries the fastest approach first, falling back to vision only when needed.</p>
+
+        <div class="pipeline">
+            <div class="pipeline-step">
+                <div class="pipeline-num">1</div>
+                <h4>Decompose Task</h4>
+                <p>A single text-only LLM call breaks your task into atomic subtasks.</p>
+                <p style="margin-top:8px;color:var(--text2);font-size:0.85rem">"Open Chrome and go to GitHub" →<br>["open Chrome", "go to github.com"]</p>
+                <div class="pipeline-badge badge-green">⚡ 200ms</div>
+            </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-step active">
+                <div class="pipeline-num">2</div>
+                <h4>Action Router</h4>
+                <p>Queries the <strong>Windows UI Automation tree</strong> — the same API screen readers (JAWS, NVDA) use. Finds elements by name, not coordinates.</p>
+                <p style="margin-top:8px;color:var(--text2);font-size:0.85rem">Handles: open apps, type text, click buttons, navigate URLs, focus windows</p>
+                <div class="pipeline-badge badge-green">✅ No LLM — 300ms</div>
+            </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-step">
+                <div class="pipeline-num">3</div>
+                <h4>LLM Vision Fallback</h4>
+                <p>Only when the router can't handle it: resized screenshot → vision LLM → coordinates → execute.</p>
+                <p style="margin-top:8px;color:var(--text2);font-size:0.85rem">Used for complex/unknown UI only (~20% of tasks)</p>
+                <div class="pipeline-badge badge-orange">⚠️ Fallback — 2s</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features">
+        <div class="section-label">Features</div>
+        <h2>Built for speed, safety, and reliability</h2>
+
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">🔍</div>
+                <h4>UI Automation Tree</h4>
+                <p>Queries the Windows accessibility API to find buttons, menus, and inputs by name — not by guessing pixel coordinates.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <h4>Zero-LLM Fast Path</h4>
+                <p>Common tasks (open apps, type text, click elements) execute in milliseconds with zero AI calls.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🧠</div>
+                <h4>Smart Decomposition</h4>
+                <p>One cheap text-only LLM call breaks complex tasks into atomic steps the router can handle.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📸</div>
+                <h4>Resized Screenshots</h4>
+                <p>When vision is needed, screenshots are resized to minimize token usage while preserving accuracy.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🛡️</div>
+                <h4>Safety Tiers</h4>
+                <p>Three-tier confirmation system: auto for safe actions, preview for typing, confirm for destructive ops.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔌</div>
+                <h4>VNC Protocol</h4>
+                <p>Connects as a standard VNC client. Watch the AI work in real-time from your own VNC viewer.</p>
+            </div>
+        </div>
+
+        <!-- Safety section -->
+        <div style="margin-top: 64px;">
+            <h3 style="font-size: 1.5rem; margin-bottom: 8px;">🛡️ Safety by Design</h3>
+            <p style="color: var(--text2); margin-bottom: 24px;">Every action is classified before execution. Destructive actions always require human approval.</p>
+            <div class="safety-tiers">
+                <div class="safety-tier auto">
+                    <h4>🟢 Auto</h4>
+                    <p>Open apps, navigate, read screen, switch windows. Executes immediately.</p>
+                </div>
+                <div class="safety-tier preview">
+                    <h4>🟡 Preview</h4>
+                    <p>Type text, fill forms. Logged before executing so you can see what's happening.</p>
+                </div>
+                <div class="safety-tier confirm">
+                    <h4>🔴 Confirm</h4>
+                    <p>Send messages, delete files, purchases. Pauses and waits for your explicit approval.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Install -->
+    <section id="install">
+        <div class="section-label">Get Started</div>
+        <h2>Up and running in 2 minutes</h2>
+
+        <div class="code-section">
+            <div class="code-header">
+                <div class="code-dot red"></div>
+                <div class="code-dot yellow"></div>
+                <div class="code-dot green"></div>
+                <span>Terminal</span>
+            </div>
+            <pre><code><span class="code-comment"># Clone and build</span>
+<span class="code-cmd">git clone</span> <span class="code-string">https://github.com/AmrDab/clawd-cursor.git</span>
+<span class="code-cmd">cd</span> clawd-cursor
+<span class="code-cmd">npm install</span>
+<span class="code-cmd">npm run build</span>
+
+<span class="code-comment"># Configure your AI API key</span>
+<span class="code-cmd">cp</span> .env.example .env
+<span class="code-comment"># Edit .env → AI_API_KEY=sk-...</span>
+
+<span class="code-comment"># Start (make sure VNC server is running)</span>
+<span class="code-cmd">npm start</span> -- --vnc-password <span class="code-string">yourpass</span>
+
+<span class="code-comment"># Send a task</span>
+<span class="code-cmd">curl</span> http://localhost:3847/task \
+  -d <span class="code-string">'{"task": "Open Chrome and go to github.com"}'</span></code></pre>
+        </div>
+
+        <div style="margin-top: 32px; color: var(--text2); font-size: 0.95rem;">
+            <strong style="color: var(--text);">Prerequisites:</strong>
+            Node.js 20+ • VNC Server (TightVNC, UltraVNC, etc.) • PowerShell (Windows) • AI API key (Anthropic or OpenAI)
+        </div>
+    </section>
+
+    <!-- CTA -->
+    <div class="cta">
+        <h2>Ready to try it?</h2>
+        <p>Clawd Cursor is open source and free. Star us on GitHub.</p>
+        <div class="hero-buttons">
+            <a href="https://github.com/AmrDab/clawd-cursor" class="btn-primary">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+                Star on GitHub
+            </a>
+        </div>
+    </div>
+
+    <footer>
+        <p>🐾 Clawd Cursor — MIT License — Built by <a href="https://github.com/AmrDab">Amr Dab</a></p>
+    </footer>
+</body>
+</html>
