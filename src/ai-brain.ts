@@ -33,6 +33,10 @@ SINGLE ACTION (most cases):
 {"kind": "key_press", "key": "Super", "description": "Press Windows key"}
 {"kind": "key_press", "key": "ctrl+a", "description": "Select all"}
 
+DRAG (for drawing, moving items, resizing — holds left click from start to end):
+{"kind": "drag", "x": 200, "y": 300, "endX": 400, "endY": 300, "description": "Draw a horizontal line"}
+{"kind": "drag", "x": 100, "y": 100, "endX": 300, "endY": 400, "description": "Drag file to folder"}
+
 SEQUENCE (for predictable multi-step flows like filling forms):
 {"kind": "sequence", "description": "Fill email form", "steps": [
   {"kind": "click", "x": 400, "y": 200, "description": "Click To field"},
