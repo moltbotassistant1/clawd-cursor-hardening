@@ -77,6 +77,16 @@ MISTAKES TO AVOID:
 - If a page is loading, use "wait" action (1-3 seconds) instead of clicking again
 - To switch to an already-open app: use Start menu search (most reliable) or alt+Tab — clicking taskbar icons by pixel is unreliable
 
+BATCHING — CRITICAL FOR SPEED:
+- You can call the computer tool MULTIPLE TIMES in a single response
+- DO THIS: batch sequential actions that don't need visual verification between them
+- Example: to open an app and type in it:
+  1. key "super" → STOP, take screenshot (need to verify Start menu opened)
+  2. type "chrome" + key "Return" → batch these TWO in one response (no screenshot needed between)
+  3. After app loads, key "ctrl+l" + type "https://example.com" + key "Return" → batch ALL THREE
+- Only request a screenshot when you need to SEE the result (page loaded? right window? error?)
+- NEVER use just one tool call per response when you can batch related actions
+
 RECOVERY:
 - Unexpected popup/ad: press Escape, or find close button in accessibility tree
 - Wrong page: use ctrl+l to navigate to correct URL
@@ -234,16 +244,19 @@ export class ComputerUseBrain {
       }
 
       // Process tool_use blocks
+      // OPTIMIZATION: When multiple tool_use blocks arrive in one response,
+      // only send full screenshot+a11y for the LAST one. Earlier actions get
+      // a lightweight "ok" result to save ~7s per skipped screenshot.
       const toolResults: any[] = [];
+      const toolUseBlocks = response.content.filter((b: ContentBlock) => (b as ToolUseBlock).type === 'tool_use') as ToolUseBlock[];
 
-      for (const block of response.content) {
-        if ((block as ToolUseBlock).type !== 'tool_use') continue;
-
-        const toolUse = block as ToolUseBlock;
+      for (let ti = 0; ti < toolUseBlocks.length; ti++) {
+        const toolUse = toolUseBlocks[ti];
         const { action } = toolUse.input;
+        const isLastInBatch = ti === toolUseBlocks.length - 1;
 
         if (action === 'screenshot') {
-          // Just take a screenshot + a11y context, no action to execute
+          // Always provide screenshot for explicit screenshot requests
           console.log(`   📸 Screenshot requested`);
           const screenshot = await this.vnc.captureForLLM();
           this.saveDebugScreenshot(screenshot.buffer, debugDir, subtaskIndex, i, 'screenshot');
@@ -277,31 +290,55 @@ export class ComputerUseBrain {
             timestamp: Date.now(),
           });
 
-          // Adaptive delay — longer for state-changing actions
-          const isNavigation = action === 'key' && toolUse.input.text?.toLowerCase().includes('return');
-          const isAppLaunch = action === 'key' && toolUse.input.text?.toLowerCase().includes('super');
-          const isTyping = action === 'type';
-          const delayMs = isAppLaunch ? 1000 : isNavigation ? 800 : isTyping ? 100 : 300;
-          await this.delay(delayMs);
+          if (result.error) {
+            // Always send full context on error so Claude can recover
+            const screenshot = await this.vnc.captureForLLM();
+            this.saveDebugScreenshot(screenshot.buffer, debugDir, subtaskIndex, i, action);
+            const a11yContext = await this.getA11yContext();
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: toolUse.id,
+              content: [
+                { type: 'text', text: `Error: ${result.error}` },
+                this.screenshotToContent(screenshot),
+                { type: 'text', text: a11yContext },
+              ],
+            });
+          } else if (isLastInBatch) {
+            // Last action in batch: send full screenshot + a11y context
+            const isNavigation = action === 'key' && toolUse.input.text?.toLowerCase().includes('return');
+            const isAppLaunch = action === 'key' && toolUse.input.text?.toLowerCase().includes('super');
+            const isTyping = action === 'type';
+            const delayMs = isAppLaunch ? 1000 : isNavigation ? 800 : isTyping ? 100 : 300;
+            await this.delay(delayMs);
 
-          // Take a screenshot + a11y context after the action
-          const screenshot = await this.vnc.captureForLLM();
-          this.saveDebugScreenshot(screenshot.buffer, debugDir, subtaskIndex, i, action);
-          const a11yContext = await this.getA11yContext();
+            const screenshot = await this.vnc.captureForLLM();
+            this.saveDebugScreenshot(screenshot.buffer, debugDir, subtaskIndex, i, action);
+            const a11yContext = await this.getA11yContext();
+            const verifyHint = this.getVerificationHint(action, toolUse.input);
 
-          // Add verification prompt to help Claude check its work
-          const verifyHint = this.getVerificationHint(action, toolUse.input);
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: toolUse.id,
+              content: [
+                this.screenshotToContent(screenshot),
+                { type: 'text', text: `${verifyHint}${a11yContext}` },
+              ],
+            });
+          } else {
+            // Not last in batch: lightweight response, skip screenshot
+            const isNavigation = action === 'key' && toolUse.input.text?.toLowerCase().includes('return');
+            const isAppLaunch = action === 'key' && toolUse.input.text?.toLowerCase().includes('super');
+            const delayMs = isAppLaunch ? 1000 : isNavigation ? 800 : 150;
+            await this.delay(delayMs);
 
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: toolUse.id,
-            content: result.error
-              ? [{ type: 'text', text: `Error: ${result.error}\nCheck the accessibility tree and screenshot to understand what went wrong.` }]
-              : [
-                  this.screenshotToContent(screenshot),
-                  { type: 'text', text: `${verifyHint}${a11yContext}` },
-                ],
-          });
+            console.log(`   ⏭️  Skipping screenshot (batch ${ti+1}/${toolUseBlocks.length})`);
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: toolUse.id,
+              content: [{ type: 'text', text: `OK — action executed successfully.` }],
+            });
+          }
         }
       }
 
