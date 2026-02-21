@@ -183,7 +183,9 @@ export class Agent {
         if (this.computerUse) {
           // Anthropic: use native Computer Use API (preferred)
           console.log(`   🖥️  Using Computer Use API...`);
-          const cuResult = await this.computerUse.executeSubtask(subtask, debugDir, i);
+          // Pass prior completed steps so Claude has context
+          const priorSteps = steps.filter(s => s.success).map(s => s.description);
+          const cuResult = await this.computerUse.executeSubtask(subtask, debugDir, i, priorSteps);
           steps.push(...cuResult.steps);
           llmCallCount += cuResult.llmCalls;
 

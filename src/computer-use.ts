@@ -31,9 +31,11 @@ WINDOWS 11 LAYOUT:
 - Start button (Windows logo) is in the CENTER of the taskbar
 - System tray (clock, icons) is bottom-RIGHT
 
-Complete the given task step by step. Take a screenshot first to observe the current screen state, then perform actions. After each significant action, take another screenshot to verify the result before proceeding.
-
-Be precise with coordinates. Be efficient — don't repeat failed actions.`;
+EFFICIENCY RULES:
+- Take a screenshot ONCE at the start to see the current state
+- For drawing/dragging tasks: chain multiple drags WITHOUT screenshots between them. Only screenshot after the full shape is done to verify.
+- Only take verification screenshots after major state changes (app opened, form submitted, drawing complete) — not after every small action.
+- Be precise with coordinates. Don't repeat failed actions.`;
 
 interface ToolUseBlock {
   type: 'tool_use';
@@ -106,6 +108,7 @@ export class ComputerUseBrain {
     subtask: string,
     debugDir: string,
     subtaskIndex: number,
+    priorSteps?: string[],
   ): Promise<ComputerUseResult> {
     const steps: StepResult[] = [];
     let llmCalls = 0;
@@ -113,10 +116,16 @@ export class ComputerUseBrain {
 
     console.log(`   🖥️  Computer Use: "${subtask}"`);
 
+    // Build context from prior completed steps so Claude doesn't redo work
+    let taskMessage = subtask;
+    if (priorSteps && priorSteps.length > 0) {
+      taskMessage = `ALREADY COMPLETED (do NOT redo these):\n${priorSteps.map((s, i) => `${i + 1}. ${s}`).join('\n')}\n\nNOW DO THIS: ${subtask}`;
+    }
+
     // Initial user message with the subtask
     messages.push({
       role: 'user',
-      content: subtask,
+      content: taskMessage,
     });
 
     for (let i = 0; i < MAX_ITERATIONS; i++) {
