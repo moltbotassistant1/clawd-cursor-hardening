@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 /**
- * 🐾 Clawd Cursor — AI Desktop Agent over VNC
- * 
- * Your AI connects to your desktop like a remote user.
+ * 🐾 Clawd Cursor — AI Desktop Agent
+ *
+ * Your AI controls your desktop natively — no VNC server needed.
  */
 
 import { Command } from 'commander';
@@ -19,15 +19,12 @@ const program = new Command();
 
 program
   .name('clawd-cursor')
-  .description('🐾 AI Desktop Agent over VNC')
-  .version('0.2.0');
+  .description('🐾 AI Desktop Agent — native screen control')
+  .version('0.3.3');
 
 program
   .command('start')
   .description('Start the Clawd Cursor agent')
-  .option('--vnc-host <host>', 'VNC server host', 'localhost')
-  .option('--vnc-port <port>', 'VNC server port', '5900')
-  .option('--vnc-password <pass>', 'VNC server password')
   .option('--port <port>', 'API server port', '3847')
   .option('--provider <provider>', 'AI provider (anthropic|openai)', 'anthropic')
   .option('--model <model>', 'Vision model to use')
@@ -35,11 +32,6 @@ program
   .action(async (opts) => {
     const config: ClawdConfig = {
       ...DEFAULT_CONFIG,
-      vnc: {
-        host: opts.vncHost,
-        port: parseInt(opts.vncPort),
-        password: opts.vncPassword || process.env.VNC_PASSWORD || '',
-      },
       server: {
         ...DEFAULT_CONFIG.server,
         port: parseInt(opts.port),
@@ -54,24 +46,19 @@ program
 
     console.log(`
 🐾 ╔═══════════════════════════════════════╗
-   ║         CLAWD CURSOR v0.2.0           ║
-   ║   AI Desktop Agent over VNC           ║
+   ║       CLAWD CURSOR v0.3.3             ║
+   ║   AI Desktop Agent — Native Control   ║
    ╚═══════════════════════════════════════╝
 `);
 
-    // Connect to VNC
-    console.log(`Connecting to VNC at ${config.vnc.host}:${config.vnc.port}...`);
     const agent = new Agent(config);
 
     try {
       await agent.connect();
     } catch (err) {
-      console.error(`\n❌ Failed to connect to VNC server: ${err}`);
-      console.error(`\nMake sure a VNC server is running:`);
-      console.error(`  1. Install TightVNC: https://tightvnc.com/download.php`);
-      console.error(`  2. Start TightVNC Server`);
-      console.error(`  3. Set a password when prompted`);
-      console.error(`  4. Run: clawd-cursor start --vnc-password <your-password>`);
+      console.error(`\n❌ Failed to initialize native desktop control: ${err}`);
+      console.error(`\nThis usually means @nut-tree-fork/nut-js couldn't access the screen.`);
+      console.error(`Make sure you're running this on a desktop with a display.`);
       process.exit(1);
     }
 
@@ -116,4 +103,3 @@ program
   });
 
 program.parse();
-

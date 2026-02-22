@@ -19,7 +19,7 @@
 import * as fs from 'fs';
 import { writeFile } from 'fs/promises';
 import * as path from 'path';
-import { VNCClient } from './vnc-client';
+import { NativeDesktop } from './native-desktop';
 import { AIBrain } from './ai-brain';
 import { LocalTaskParser } from './local-parser';
 import { SafetyLayer } from './safety';
@@ -34,7 +34,7 @@ const MAX_SIMILAR_ACTION = 3;
 const MAX_LLM_FALLBACK_STEPS = 10;
 
 export class Agent {
-  private vnc: VNCClient;
+  private vnc: NativeDesktop;
   private brain: AIBrain;
   private parser: LocalTaskParser;
   private safety: SafetyLayer;
@@ -52,7 +52,7 @@ export class Agent {
 
   constructor(config: ClawdConfig) {
     this.config = config;
-    this.vnc = new VNCClient(config);
+    this.vnc = new NativeDesktop(config);
     this.brain = new AIBrain(config);
     this.parser = new LocalTaskParser();
     this.safety = new SafetyLayer(config);

@@ -8,7 +8,7 @@
 
 import * as os from 'os';
 import { AccessibilityBridge } from './accessibility';
-import { VNCClient } from './vnc-client';
+import { NativeDesktop } from './native-desktop';
 import type { WindowInfo } from './accessibility';
 
 const PLATFORM = os.platform();
@@ -58,9 +58,9 @@ const READY_SETTLE_MS = 500;      // extra ms after window appears (let UI rende
 
 export class ActionRouter {
   private a11y: AccessibilityBridge;
-  private vnc: VNCClient;
+  private vnc: NativeDesktop;
 
-  constructor(a11y: AccessibilityBridge, vnc: VNCClient) {
+  constructor(a11y: AccessibilityBridge, vnc: NativeDesktop) {
     this.a11y = a11y;
     this.vnc = vnc;
   }

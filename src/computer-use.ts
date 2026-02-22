@@ -15,7 +15,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { VNCClient } from './vnc-client';
+import { NativeDesktop } from './native-desktop';
 import { AccessibilityBridge } from './accessibility';
 import { SafetyLayer } from './safety';
 import { SafetyTier } from './types';
@@ -124,7 +124,7 @@ export interface ComputerUseResult {
 
 export class ComputerUseBrain {
   private config: ClawdConfig;
-  private vnc: VNCClient;
+  private vnc: NativeDesktop;
   private a11y: AccessibilityBridge;
   private safety: SafetyLayer;
   private screenWidth: number;
@@ -136,7 +136,7 @@ export class ComputerUseBrain {
   private lastMouseX = 0;
   private lastMouseY = 0;
 
-  constructor(config: ClawdConfig, vnc: VNCClient, a11y: AccessibilityBridge, safety: SafetyLayer) {
+  constructor(config: ClawdConfig, vnc: NativeDesktop, a11y: AccessibilityBridge, safety: SafetyLayer) {
     this.config = config;
     this.vnc = vnc;
     this.a11y = a11y;
@@ -146,7 +146,7 @@ export class ComputerUseBrain {
     this.screenWidth = screen.width;
     this.screenHeight = screen.height;
 
-    // Scale factor MUST match VNCClient.captureForLLM() — use floating point, not ceil
+    // Scale factor MUST match NativeDesktop.captureForLLM() — use floating point, not ceil
     this.scaleFactor = screen.width > 1280 ? screen.width / 1280 : 1;
     this.llmWidth = Math.min(screen.width, 1280);
     this.llmHeight = Math.round(screen.height / this.scaleFactor);

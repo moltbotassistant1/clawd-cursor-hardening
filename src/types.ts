@@ -78,7 +78,8 @@ export interface AgentState {
 }
 
 export interface ClawdConfig {
-  vnc: {
+  /** @deprecated VNC no longer required — NativeDesktop controls the local screen directly */
+  vnc?: {
     host: string;
     port: number;
     password: string;
