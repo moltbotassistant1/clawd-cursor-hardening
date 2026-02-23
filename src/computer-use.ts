@@ -167,7 +167,7 @@ export class ComputerUseBrain {
    */
   async executeSubtask(
     subtask: string,
-    debugDir: string,
+    debugDir: string | null,
     subtaskIndex: number,
     priorSteps?: string[],
   ): Promise<ComputerUseResult> {
@@ -265,7 +265,7 @@ export class ComputerUseBrain {
           // Always provide screenshot for explicit screenshot requests
           console.log(`   📸 Screenshot requested`);
           const screenshot = await this.desktop.captureForLLM();
-          this.saveDebugScreenshot(screenshot.buffer, debugDir, subtaskIndex, i, 'screenshot');
+          if (debugDir) this.saveDebugScreenshot(screenshot.buffer, debugDir, subtaskIndex, i, 'screenshot');
           const a11yContext = await this.getA11yContext();
 
           toolResults.push({
@@ -317,7 +317,7 @@ export class ComputerUseBrain {
           if (result.error) {
             // Always send full context on error so Claude can recover
             const screenshot = await this.desktop.captureForLLM();
-            this.saveDebugScreenshot(screenshot.buffer, debugDir, subtaskIndex, i, action);
+            if (debugDir) this.saveDebugScreenshot(screenshot.buffer, debugDir, subtaskIndex, i, action);
             const a11yContext = await this.getA11yContext();
             toolResults.push({
               type: 'tool_result',
@@ -337,7 +337,7 @@ export class ComputerUseBrain {
             await this.delay(delayMs);
 
             const screenshot = await this.desktop.captureForLLM();
-            this.saveDebugScreenshot(screenshot.buffer, debugDir, subtaskIndex, i, action);
+            if (debugDir) this.saveDebugScreenshot(screenshot.buffer, debugDir, subtaskIndex, i, action);
             const a11yContext = await this.getA11yContext();
             const verifyHint = this.getVerificationHint(action, toolUse.input);
 

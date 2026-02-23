@@ -29,6 +29,7 @@ program
   .option('--provider <provider>', 'AI provider (anthropic|openai)', 'anthropic')
   .option('--model <model>', 'Vision model to use')
   .option('--api-key <key>', 'AI provider API key')
+  .option('--debug', 'Save screenshots to debug/ folder (off by default)')
   .action(async (opts) => {
     const config: ClawdConfig = {
       ...DEFAULT_CONFIG,
@@ -42,6 +43,7 @@ program
         model: opts.model || DEFAULT_CONFIG.ai.model,
         visionModel: opts.model || DEFAULT_CONFIG.ai.visionModel,
       },
+      debug: opts.debug || false,
     };
 
     console.log(`

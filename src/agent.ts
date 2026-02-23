@@ -94,15 +94,18 @@ export class Agent {
 
     console.log(`\n🐾 Starting task: ${task}`);
 
-    // Setup debug directory (async to avoid blocking event loop)
-    const debugDir = path.join(process.cwd(), 'debug');
-    try {
-      if (fs.existsSync(debugDir)) {
-        for (const f of fs.readdirSync(debugDir)) fs.unlinkSync(path.join(debugDir, f));
-      } else {
-        fs.mkdirSync(debugDir);
-      }
-    } catch { /* non-fatal */ }
+    // Setup debug directory (only when --debug flag is set)
+    const debugDir = this.config.debug ? path.join(process.cwd(), 'debug') : null;
+    if (debugDir) {
+      try {
+        if (fs.existsSync(debugDir)) {
+          for (const f of fs.readdirSync(debugDir)) fs.unlinkSync(path.join(debugDir, f));
+        } else {
+          fs.mkdirSync(debugDir);
+        }
+      } catch { /* non-fatal */ }
+      console.log(`   🐛 Debug mode: screenshots will be saved to ${debugDir}`);
+    }
 
     this.state = {
       status: 'thinking',
@@ -138,7 +141,7 @@ export class Agent {
    */
   private async executeWithComputerUse(
     task: string,
-    debugDir: string,
+    debugDir: string | null,
     startTime: number,
   ): Promise<TaskResult> {
     console.log(`   🖥️  Using Computer Use API (screenshot-first)\n`);
@@ -174,7 +177,7 @@ export class Agent {
    */
   private async executeWithDecomposeAndRoute(
     task: string,
-    debugDir: string,
+    debugDir: string | null,
     startTime: number,
   ): Promise<TaskResult> {
     const steps: StepResult[] = [];
@@ -285,7 +288,7 @@ export class Agent {
   private async executeLLMFallback(
     subtask: string,
     steps: StepResult[],
-    debugDir: string,
+    debugDir: string | null,
     subtaskIndex: number,
   ): Promise<{ success: boolean; llmCalls: number }> {
     const stepDescriptions: string[] = [];
@@ -304,13 +307,15 @@ export class Agent {
         this.a11y.getScreenContext().catch(() => undefined as string | undefined),
       ]);
 
-      // ── Perf Opt #5: Async debug file write (non-blocking) ──
-      const ext = screenshot.format === 'jpeg' ? 'jpg' : 'png';
-      writeFile(
-        path.join(debugDir, `subtask-${subtaskIndex}-step-${j}.${ext}`),
-        screenshot.buffer,
-      ).catch(() => {});
-      console.log(`   💾 Debug screenshot queued (${(screenshot.buffer.length / 1024).toFixed(0)}KB, ${screenshot.llmWidth}x${screenshot.llmHeight})`);
+      // ── Debug screenshot save (only when --debug flag is set) ──
+      if (debugDir) {
+        const ext = screenshot.format === 'jpeg' ? 'jpg' : 'png';
+        writeFile(
+          path.join(debugDir, `subtask-${subtaskIndex}-step-${j}.${ext}`),
+          screenshot.buffer,
+        ).catch(() => {});
+        console.log(`   💾 Debug screenshot saved (${(screenshot.buffer.length / 1024).toFixed(0)}KB, ${screenshot.llmWidth}x${screenshot.llmHeight})`);
+      }
 
       // Ask AI what to do
       this.state.status = 'thinking';

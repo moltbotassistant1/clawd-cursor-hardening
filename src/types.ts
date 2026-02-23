@@ -104,6 +104,8 @@ export interface ClawdConfig {
     quality: number;
     maxWidth: number;
   };
+  /** Save screenshots to debug/ folder. Off by default for security. */
+  debug?: boolean;
 }
 
 export const DEFAULT_CONFIG: ClawdConfig = {

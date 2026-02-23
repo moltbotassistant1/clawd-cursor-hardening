@@ -100,9 +100,12 @@ Best for simple tasks. ~2s. Works offline.
 
 ## Security Considerations
 
-- AI API keys allow **sending screenshots to external APIs** — use test keys first
-- Run in a **sandbox or VM** when testing with sensitive data
-- The `/confirm` endpoint enforces the 🔴 safety tier — verify it works before trusting autonomous operation
+- **Screenshots are NOT saved to disk by default.** They are held in memory only and sent to the AI provider for processing. Use `--debug` flag to enable disk saves for troubleshooting.
+- AI API keys allow **sending screenshots to external APIs** — use scoped/temporary keys, rotate after testing.
+- The Express API **binds to 127.0.0.1 only** — not accessible from other machines on the network.
+- The `/confirm` endpoint enforces the 🔴 safety tier for destructive actions (send messages, delete files, purchases).
+- Run in a **sandbox or VM** when testing with sensitive data visible on screen.
+- **No postinstall scripts** — `npm install` only fetches dependencies, no code runs automatically.
 
 ## Changelog
 
