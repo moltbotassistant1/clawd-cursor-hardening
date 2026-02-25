@@ -4,7 +4,8 @@
   "description": "AI Desktop Agent — Native screen control via @nut-tree-fork/nut-js. Your AI sees the screen, moves the mouse, types, and completes tasks autonomously.",
   "main": "dist/index.js",
   "bin": {
-    "clawd-cursor": "dist/index.js"
+    "clawd-cursor": "dist/index.js",
+    "clawdcursor": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
