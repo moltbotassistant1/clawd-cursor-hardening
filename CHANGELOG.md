@@ -2,6 +2,32 @@
 
 All notable changes to Clawd Cursor will be documented in this file.
 
+## [0.5.2] - 2026-02-25 — Web Dashboard + Browser Foreground Focus
+
+### Added
+- **Web Dashboard** — full single-page UI served at `GET /` (port 3847). Task submission, real-time logs, status indicators, approve/reject for safety confirmations, kill switch. Dark theme, fully responsive, zero external dependencies.
+- **`clawdcursor dashboard`** — CLI command to open the dashboard in your default browser
+- **`clawdcursor kill`** — CLI command to send a stop signal to the running server
+- **`GET /logs`** — API endpoint returning last 200 log entries with timestamps and levels
+- **Browser foreground focus** — Playwright navigation now brings Chrome to the front via `page.bringToFront()` + OS-level window activation (PowerShell `SetForegroundWindow` on Windows, `osascript` on macOS). The AI acts like a visible cursor — you see everything it does.
+- **Console hook** — `hookConsole()` intercepts all server logs for the dashboard log feed with auto-classification (error/success/warn/info)
+
+### Changed
+- **Smart task handoff** — Browser layer no longer uses regex word lists to detect multi-step tasks. Pure navigation ("open youtube") completes in browser layer; anything more complex falls through to SmartInteraction where the LLM plans the steps. No more missed verbs.
+
+### Architecture
+```
+Layer 0: Browser (Playwright) — navigate + foreground focus
+    ↓ more than navigation? → fall through
+Layer 1: Action Router — regex patterns, zero LLM calls
+    ↓ no match? → fall through
+Layer 1.5: Smart Interaction — 1 LLM call plans steps, CDP/UIDriver executes
+    ↓ failed? → fall through
+Layer 2: Accessibility Reasoner — reads UI tree, cheap LLM
+    ↓ failed? → fall through
+Layer 3: Screenshot + Vision — full screenshot, Computer Use API
+```
+
 ## [0.5.1] - 2026-02-23 — HD Screenshots + Focus Stability
 
 ### Fixed

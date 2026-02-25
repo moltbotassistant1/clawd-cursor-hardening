@@ -219,4 +219,44 @@ done
     }
   });
 
+program
+  .command('dashboard')
+  .description('Open the Clawd Cursor web dashboard in your browser')
+  .option('--port <port>', 'API server port', '3847')
+  .action(async (opts) => {
+    const url = `http://127.0.0.1:${opts.port}`;
+    console.log('🐾 Opening dashboard... Make sure clawdcursor start is running.');
+
+    const os = await import('os');
+    const { exec: execCmd } = await import('child_process');
+    const platform = os.platform();
+
+    if (platform === 'win32') {
+      execCmd(`start ${url}`);
+    } else if (platform === 'darwin') {
+      execCmd(`open ${url}`);
+    } else {
+      execCmd(`xdg-open ${url}`);
+    }
+  });
+
+program
+  .command('kill')
+  .description('Kill a running Clawd Cursor instance (same as stop)')
+  .option('--port <port>', 'API server port', '3847')
+  .action(async (opts) => {
+    const url = `http://127.0.0.1:${opts.port}/stop`;
+    try {
+      const res = await fetch(url, { method: 'POST' });
+      const data = await res.json() as any;
+      if (data.stopped) {
+        console.log('🐾 Clawd Cursor killed');
+      } else {
+        console.error('Unexpected response:', JSON.stringify(data));
+      }
+    } catch {
+      console.error('No running instance found');
+    }
+  });
+
 program.parse();
