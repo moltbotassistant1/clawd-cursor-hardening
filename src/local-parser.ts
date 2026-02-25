@@ -129,45 +129,45 @@ export class LocalTaskParser {
     // Try each pattern in order of specificity
 
     // 1. Open / Launch / Start [app]
-    const openMatch = normalized.match(/^(?:open|launch|start)\s+(.+)$/i);
+    const openMatch = normalized.match(/^(?:open|launch|start)\s+(\S.*)$/i);
     if (openMatch) {
       return `open ${openMatch[1].trim()}`;
     }
 
     // 2. Go to / Navigate to / Visit [url]
-    const navigateMatch = normalized.match(/^(?:go\s+to|navigate\s+to|visit)\s+(.+)$/i);
+    const navigateMatch = normalized.match(/^(?:go\s+to|navigate\s+to|visit)\s+(\S.*)$/i);
     if (navigateMatch) {
       return `go to ${navigateMatch[1].trim()}`;
     }
 
     // 3. Close [app]
-    const closeMatch = normalized.match(/^close\s+(.+)$/i);
+    const closeMatch = normalized.match(/^close\s+(\S.*)$/i);
     if (closeMatch) {
       return `close ${closeMatch[1].trim()}`;
     }
 
     // 4. Minimize [window/app]
-    const minimizeMatch = normalized.match(/^minimize(?:\s+the)?\s*(.*)$/i);
+    const minimizeMatch = normalized.match(/^minimize(?:\s+the)?\s*(\S.*)?$/i);
     if (minimizeMatch) {
       const target = minimizeMatch[1]?.trim();
       return target ? `minimize ${target}` : 'minimize window';
     }
 
     // 5. Maximize [window/app]
-    const maximizeMatch = normalized.match(/^maximize(?:\s+the)?\s*(.*)$/i);
+    const maximizeMatch = normalized.match(/^maximize(?:\s+the)?\s*(\S.*)?$/i);
     if (maximizeMatch) {
       const target = maximizeMatch[1]?.trim();
       return target ? `maximize ${target}` : 'maximize window';
     }
 
     // 6. Focus / Switch to [window]
-    const focusMatch = normalized.match(/^(?:focus|switch\s+to)\s+(.+)$/i);
+    const focusMatch = normalized.match(/^(?:focus|switch\s+to)\s+(\S.*)$/i);
     if (focusMatch) {
       return `focus ${focusMatch[1].trim()}`;
     }
 
     // 7. Type / Write / Enter [text]
-    const typeMatch = normalized.match(/^(?:type|write|enter)\s+(.+)$/i);
+    const typeMatch = normalized.match(/^(?:type|write|enter)\s+(\S.*)$/i);
     if (typeMatch) {
       const text = typeMatch[1].trim();
       // Remove surrounding quotes if present
@@ -176,13 +176,13 @@ export class LocalTaskParser {
     }
 
     // 8. Click [element]
-    const clickMatch = normalized.match(/^click\s+(.+)$/i);
+    const clickMatch = normalized.match(/^click\s+(\S.*)$/i);
     if (clickMatch) {
       return `click ${clickMatch[1].trim()}`;
     }
 
     // 9. Press [button/key]
-    const pressMatch = normalized.match(/^press\s+(.+)$/i);
+    const pressMatch = normalized.match(/^press\s+(\S.*)$/i);
     if (pressMatch) {
       return `press ${pressMatch[1].trim()}`;
     }
@@ -241,19 +241,19 @@ export class LocalTaskParser {
     }
 
     // 13. Double-click [element]
-    const doubleClickMatch = normalized.match(/^(?:double[- ]click|doubleclick)\s+(.+)$/i);
+    const doubleClickMatch = normalized.match(/^(?:double[- ]click|doubleclick)\s+(\S.*)$/i);
     if (doubleClickMatch) {
       return `double click ${doubleClickMatch[1].trim()}`;
     }
 
     // 14. Right-click [element]
-    const rightClickMatch = normalized.match(/^(?:right[- ]click|rightclick)\s+(.+)$/i);
+    const rightClickMatch = normalized.match(/^(?:right[- ]click|rightclick)\s+(\S.*)$/i);
     if (rightClickMatch) {
       return `right click ${rightClickMatch[1].trim()}`;
     }
 
     // 15. Search for [query]
-    const searchMatch = normalized.match(/^search\s+(?:for\s+)?(.+)$/i);
+    const searchMatch = normalized.match(/^search\s+(?:for\s+)?(\S.*)$/i);
     if (searchMatch) {
       return `search for ${searchMatch[1].trim()}`;
     }

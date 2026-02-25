@@ -295,7 +295,7 @@ export class BrowserLayer {
         // Browser layer only handles pure navigation.
         // If the task is JUST "open youtube" / "go to google.com" — we're done.
         // Anything more complex → fall through to SmartInteraction and let the LLM plan the steps.
-        const pureNavigation = /^(open|go to|navigate to|visit|launch|load)\s+[\w\s./:]+$/i;
+        const pureNavigation = /^(?:open|go to|navigate to|visit|launch|load)\s+[\w./:]+(?:\s+[\w./:]+)*$/i;
         if (pureNavigation.test(task.trim()) && !task.includes(' and ')) {
           return {
             handled: true,
@@ -416,10 +416,12 @@ export class BrowserLayer {
    * Extract a search query from a task.
    */
   private extractSearchQuery(task: string): string | null {
-    const searchMatch = task.match(/\b(?:search|look up|find|google)\s+(?:for\s+)?["']?([^"']+?)["']?$/i);
+    const searchMatch = task.match(/\b(?:search|look up|find|google)\s+(?:for\s+)?["']([^"']+)["']$/i) ||
+                        task.match(/\b(?:search|look up|find|google)\s+(?:for\s+)?(\S.*)$/i);
     if (searchMatch) return searchMatch[1];
     
-    const webSearchMatch = task.match(/\b(?:search the web|web search|search online)\s+(?:for\s+)?["']?([^"']+?)["']?$/i);
+    const webSearchMatch = task.match(/\b(?:search the web|web search|search online)\s+(?:for\s+)?["']([^"']+)["']$/i) ||
+                           task.match(/\b(?:search the web|web search|search online)\s+(?:for\s+)?(\S.*)$/i);
     if (webSearchMatch) return webSearchMatch[1];
 
     return null;
