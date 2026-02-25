@@ -2,10 +2,10 @@
 name: clawd-cursor
 version: 0.5.1
 description: >
-  AI desktop agent with smart 4-layer pipeline. Controls Windows and macOS natively via screen + accessibility APIs.
-  Works with any AI provider (Anthropic, OpenAI, Ollama, Kimi) or completely free with local models.
-  Auto-configures via 'clawd-cursor doctor'. Smart Interaction Layer handles browser tasks with 95% fewer tokens.
-  Cross-platform: Windows (PowerShell/.NET) + macOS (JXA/AppleScript).
+  AI desktop agent — control any app on Windows/macOS from your OpenClaw agent.
+  Send natural language tasks to the Clawd Cursor API and it handles everything:
+  opening apps, clicking buttons, typing text, navigating browsers, filling forms.
+  If you can click it, your agent can too.
 privacy: >
   All screenshots and data stay local on the user's machine. AI calls go only to the user's own configured
   API provider and key — no data is sent to third-party servers or skill authors. With Ollama, everything
@@ -20,6 +20,7 @@ metadata:
       - git clone https://github.com/AmrDab/clawd-cursor.git
       - cd clawd-cursor && npm install && npm run build
       - cd clawd-cursor && npx clawd-cursor doctor
+      - cd clawd-cursor && npm start
     privacy:
       - Screenshots processed by user's own configured AI provider only
       - With Ollama, fully offline — no external API calls
@@ -32,118 +33,150 @@ credentials:
 
 # Clawd Cursor
 
-**One skill, every app.** Instead of integrating dozens of APIs, give your agent a screen. Gmail, Slack, Jira, Figma — if you can click it, your agent can too.
+**One skill, every app.** Give your agent a screen instead of integrating dozens of APIs.
 
-## What's New in v0.5.1
+---
 
-- **Smart Interaction Layer** — Browser tasks use 1 LLM call instead of 18 (95% token savings)
-- **CDP Driver** — Chrome DevTools Protocol for fast, free browser DOM interaction
-- **UI Driver** — Native UI Automation for Windows (.NET) and macOS (JXA)
-- **macOS Support** — Full cross-platform: JXA scripts for accessibility, AppleScript for UI control
-- **Doctor Version Check** — Tells you when updates are available
-- **Self-healing pipeline** — Falls through layers automatically on failure
+## Agent Instructions (READ THIS FIRST)
 
-## Quick Start
+When the user asks you to do something on their desktop — open an app, click a button, navigate a browser, type text, fill a form, send an email — route it to the Clawd Cursor API.
+
+### The API
+
+Clawd Cursor runs locally at `http://127.0.0.1:3847`. All communication is via REST.
+
+### Sending a Task
+
+```bash
+curl -s -X POST http://127.0.0.1:3847/task \
+  -H "Content-Type: application/json" \
+  -d '{"task": "YOUR_TASK_HERE"}'
+```
+
+PowerShell:
+```powershell
+Invoke-RestMethod -Uri http://127.0.0.1:3847/task -Method POST -ContentType "application/json" -Body '{"task": "YOUR_TASK_HERE"}'
+```
+
+### Checking Status
+
+```bash
+curl -s http://127.0.0.1:3847/status
+```
+
+### Confirming Safety-Gated Actions
+
+Some actions (sending messages, deleting) require approval:
+```bash
+curl -s -X POST http://127.0.0.1:3847/confirm \
+  -H "Content-Type: application/json" \
+  -d '{"approved": true}'
+```
+
+### Aborting a Task
+
+```bash
+curl -s -X POST http://127.0.0.1:3847/abort
+```
+
+### Task Writing Guidelines
+
+1. **Be specific** — include app names, URLs, exact text to type, button names
+2. **One task at a time** — wait for completion before sending the next
+3. **Describe the goal, not the clicks** — say "Send an email to john@example.com about the meeting" not "click compose, click to field, type john..."
+4. **Check status** if a task seems to hang
+5. **Don't include credentials in task text** — tasks are logged
+
+### Task Examples
+
+| User says | Task to send |
+|---|---|
+| "Open Chrome and go to github.com" | `Open Chrome and go to github.com` |
+| "Send an email to john about tomorrow's meeting" | `Open Gmail, compose email to john@example.com, subject: Meeting Tomorrow, body: Hi John, confirming our meeting tomorrow at 2pm. Best regards.` |
+| "Open Calculator and compute 42 * 58" | `Open Calculator and compute 42 times 58` |
+| "Type hello world in Notepad" | `Open Notepad and type hello world` |
+| "Close all browser tabs" | `Close all browser tabs` |
+| "Take a screenshot" | `Take a screenshot` |
+| "Open VS Code" | `Open VS Code` |
+| "Go to Settings" | `Open Settings` |
+
+### Response Format
+
+Success:
+```json
+{"status": "completed", "result": {"handled": true, "description": "Opened Chrome and navigated to github.com"}}
+```
+
+Running:
+```json
+{"status": "running", "task": "Open Chrome and go to github.com", "step": 3}
+```
+
+Waiting for confirmation:
+```json
+{"status": "confirming", "task": "Send email to john@example.com", "action": "Sending email"}
+```
+
+### Troubleshooting
+
+- **Connection refused** → Clawd Cursor isn't running. Start it: `cd clawd-cursor && npm start`
+- **Task fails repeatedly** → Rephrase with more specifics (app name, button name, exact text)
+- **Needs confirmation** → Check `/status`, then POST `/confirm` with `{"approved": true}`
+- **Wrong app focused** → Send "Focus [app name]" first, then your task
+
+---
+
+## Setup (for the user, not the agent)
 
 ```bash
 git clone https://github.com/AmrDab/clawd-cursor.git
 cd clawd-cursor
 npm install && npm run build
 npx clawd-cursor doctor    # auto-detects and configures everything
-npm start
+npm start                  # starts the API server on port 3847
 ```
-
-That's it. The doctor handles provider detection, model testing, and pipeline configuration.
 
 ### macOS Users
 Grant **Accessibility permission** to your terminal app:
 **System Settings → Privacy & Security → Accessibility → add Terminal/iTerm**
 
-See `docs/MACOS-SETUP.md` for full setup guide.
+See `docs/MACOS-SETUP.md` for full guide.
+
+### Provider Setup
+
+| Provider | Setup | Cost |
+|----------|-------|------|
+| **Ollama (free)** | `ollama pull qwen2.5:7b` | $0 |
+| **Anthropic** | Set `AI_API_KEY=sk-ant-...` | ~$3/M tokens |
+| **OpenAI** | Set `AI_API_KEY=sk-...` | ~$5/M tokens |
+| **Kimi** | Set `AI_API_KEY=sk-...` | ~$1/M tokens |
+
+The `doctor` command auto-detects which provider is available.
+
+---
 
 ## How It Works — 4-Layer Pipeline
-
-Every task flows through layers. Most tasks are handled by Layer 1 (free, instant). Only complex tasks reach Layer 3.
 
 | Layer | What | Speed | Cost |
 |-------|------|-------|------|
 | **0: Browser Layer** | URL detection → direct navigation | Instant | Free |
-| **1: Action Router** | Regex + UI Automation. Opens apps, types, clicks by name | Instant | Free |
-| **1.5: Smart Interaction** | 1 LLM plan → CDP/UIDriver executes steps free | ~2-5s | 1 LLM call |
-| **2: Accessibility Reasoner** | Reads UI tree → cheap text LLM decides action | ~1s | Free (Qwen) or $0.25/M (Haiku) |
-| **3: Computer Use** | Full screenshot → vision LLM or Anthropic Computer Use | ~5-8s | ~$3/M (Sonnet) |
+| **1: Action Router** | Regex + UI Automation | Instant | Free |
+| **1.5: Smart Interaction** | 1 LLM plan → CDP/UIDriver executes | ~2-5s | 1 LLM call |
+| **2: Accessibility Reasoner** | UI tree → text LLM decides | ~1s | Cheap |
+| **3: Computer Use** | Screenshot → vision LLM | ~5-8s | Expensive |
 
-**Example:** Sending a Gmail email — Layer 1.5 does it in **1 LLM call, 21 seconds**. Computer Use would take 18 LLM calls, 162 seconds.
+80%+ of tasks handled by Layer 0-1 (free, instant). Vision model is last resort only.
 
-## Provider Support
-
-| Provider | Setup | Layer 2 | Layer 3 | Computer Use |
-|----------|-------|---------|---------|-------------|
-| **Ollama** | `ollama pull qwen2.5:7b` | Qwen (free) | Limited | ❌ |
-| **Anthropic** | `AI_API_KEY=sk-ant-...` | Haiku or Qwen | Sonnet | ✅ |
-| **OpenAI** | `AI_API_KEY=sk-...` | GPT-4o-mini | GPT-4o | ❌ |
-| **Kimi** | `AI_API_KEY=sk-...` | Moonshot-8k | Moonshot-8k | ❌ |
-
-## Platform Support
-
-| Platform | UI Automation | Accessibility | Browser (CDP) |
-|----------|--------------|---------------|---------------|
-| **Windows** | PowerShell/.NET UIAutomation | ✅ Full | ✅ Edge/Chrome |
-| **macOS** | JXA/AppleScript + System Events | ✅ Full | ✅ Chrome |
-| **Linux** | Not yet | Not yet | ✅ Chrome |
-
-## OpenClaw Agent Instructions
-
-When an OpenClaw agent dispatches Clawd Cursor tasks:
-
-### Simple Tasks
-```
-POST http://localhost:3847/task
-{"task": "Open Notepad and type hello world"}
-```
-
-### Complex Tasks (two-agent pattern)
-For heavy workloads, spawn two sub-agents:
-1. **Setup agent** — runs `doctor`, starts server, validates connectivity
-2. **Task agent** — sends tasks via REST API, monitors status, reports results
-
-## Doctor (Self-Healing)
-
-```bash
-npx clawd-cursor doctor
-```
-
-The doctor:
-1. Checks for updates against GitHub releases
-2. Tests screen capture and accessibility bridge
-3. Detects available AI providers and tests models
-4. Builds the optimal pipeline config
-5. Falls back gracefully if models are unavailable
-6. Saves config to `.clawd-config.json`
-
-## API Endpoints
-
-`http://localhost:3847`
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/task` | POST | `{"task": "Open Chrome"}` |
-| `/status` | GET | Agent state |
-| `/confirm` | POST | `{"approved": true}` |
-| `/abort` | POST | Stop current task |
-
-## Safety
+## Safety Tiers
 
 | Tier | Actions | Behavior |
 |------|---------|----------|
 | 🟢 Auto | Navigation, reading, opening apps | Runs immediately |
 | 🟡 Preview | Typing, form filling | Logs before executing |
-| 🔴 Confirm | Sending messages, deleting | Pauses for approval |
+| 🔴 Confirm | Sending messages, deleting | Pauses — agent must POST `/confirm` |
 
 ## Security
 
-- Screenshots are NOT saved to disk by default (memory only, sent to user's own AI provider)
 - API binds to 127.0.0.1 only — not network accessible
-- Use `--debug` to opt-in to disk screenshot saves
-- Run in a sandbox/VM when testing with sensitive screen content
-- With Ollama, everything runs 100% locally — no external API calls
+- Screenshots stay in memory, never saved to disk (unless `--debug`)
+- With Ollama, 100% local — zero external API calls
