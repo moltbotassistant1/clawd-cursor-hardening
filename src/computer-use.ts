@@ -36,17 +36,17 @@ CRITICAL — SPEED RULES:
 2. CHECKPOINT STRATEGY: Take a screenshot after critical state changes. Then batch all predictable actions without screenshots.
 3. MANDATORY screenshots: (a) after opening any app/dialog/page, (b) after selecting a tool/mode/tab in ANY app, (c) before starting repetitive actions (to confirm setup is correct), (d) to verify final results.
 4. NEVER batch a tool/mode selection click together with the actions that depend on it. Always verify the tool is selected first.
-5. After opening ANY app: send key "super+Up" to maximize it (ensures consistent full-screen layout).
+5. WINDOW MANAGEMENT: For single-app tasks, maximize with "super+Up". For multi-app tasks (side by side, comparing, etc.), use "super+Left" and "super+Right" to snap windows to halves. The PRIMARY app (where most work happens, e.g. Paint for drawing) gets the LARGER side or is opened FIRST with snap. Secondary/utility apps (timer, reference, etc.) get the smaller side. Think about which app needs more screen space.
 6. Prefer keyboard shortcuts over mouse clicks. Type instead of click when possible.
 7. For save/open dialogs: use ABSOLUTE paths (C:\Users\...) never environment variables (%USERPROFILE%).
 8. FOCUS HINTS: When you receive a "FOCUS:" hint, only analyze that area of the screenshot. Don't describe the entire screen.
 
 PATTERNS:
-- Open app: key "super" + type name + key "Return" + wait 2s + key "super+Up" (maximize) — all in one response
+- Open app: key "super" + type name + key "Return" + wait 2s — all in one response. Then maximize ("super+Up") for single-app tasks, or snap ("super+Left"/"super+Right") for multi-app tasks.
 - Navigate URL: key "ctrl+l" + type full URL + key "Return" — all in one response
 - Fill forms: tab between fields + type values — batch the entire form in one response
-- Repetitive actions (drawing, data entry, clicking multiple items): FIRST verify setup (tool selected, right window), THEN batch ALL repetitive actions in one response
-- Drawing in Paint: Use the PENCIL tool (first tool in toolbar, leftmost). Draw circles as connected line segments (hexagon). Do NOT try to find shape tools — they are too small to identify reliably. Select pencil, verify it's selected, then batch all draws.
+- Repetitive actions (drawing, data entry, clicking multiple items): FIRST verify setup with ONE screenshot (tool selected, right window, note coordinates), THEN batch ALL repetitive actions in ONE response with ZERO screenshots. You remember everything you've seen — the UI doesn't change during repetitive actions, so screenshots between them are wasted calls.
+- Drawing in Paint: Use the PENCIL tool (first tool in toolbar, leftmost). Draw circles as connected line segments (hexagon). Do NOT try to find shape tools — they are too small to identify reliably. Select pencil, take ONE screenshot to verify it's selected and note the canvas bounds, then batch ALL drawing strokes in a SINGLE response with NO screenshots between them. You have photographic memory — the canvas, tools, and coordinates don't change between strokes. The only screenshot needed is the final verification after all drawing is complete.
 - Save file: key "ctrl+s", wait 1s, type absolute path, key "Return" — all in one response
 - Recovery: popup → Escape, wrong page → ctrl+l + correct URL, app frozen → alt+F4 + reopen
 
@@ -185,16 +185,92 @@ export class ComputerUseBrain {
         }
       }
 
-      // If end_turn → task complete
+      // If end_turn → Claude thinks it's done. Verify with a final screenshot.
       if (response.stop_reason === 'end_turn') {
-        console.log(`   ✅ Computer Use: subtask complete`);
-        steps.push({
-          action: 'done',
-          description: `Computer Use completed: "${subtask}"`,
-          success: true,
-          timestamp: Date.now(),
+        // Skip verification for simple visual tasks (drawing, etc.) where
+        // there's no objective pass/fail state to check
+        const isVisualTask = /\b(draw|paint|sketch|doodle|color|design)\b/i.test(subtask);
+        
+        if (isVisualTask) {
+          console.log(`   ✅ Computer Use: subtask complete (visual task — skipping verification)`);
+          steps.push({
+            action: 'done',
+            description: `Computer Use completed: "${subtask}"`,
+            success: true,
+            timestamp: Date.now(),
+          });
+          return { success: true, steps, llmCalls };
+        }
+
+        // For non-visual tasks: take a verification screenshot and ask Claude to confirm
+        console.log(`   🔍 Verifying outcome...`);
+        llmCalls++;
+        
+        const verifyScreenshot = await this.desktop.captureForLLM();
+        if (debugDir) this.saveDebugScreenshot(verifyScreenshot.buffer, debugDir, subtaskIndex, i, 'verify');
+        const a11yContext = await this.getA11yContext();
+
+        messages.push({
+          role: 'user',
+          content: [
+            { type: 'text', text: `VERIFICATION CHECK: You said the task "${subtask}" is done. Look at this screenshot and the accessibility tree carefully. Is the task ACTUALLY completed? Check for:\n- File actually saved/created (title bar changed? dialog closed?)\n- Correct content visible on screen\n- No error dialogs or unexpected state\n\nRespond with ONLY one of:\n{"verified": true, "evidence": "what you see that confirms success"}\n{"verified": false, "evidence": "what's wrong", "recovery": "what to do next"}` },
+            { type: 'image', source: { type: 'base64', media_type: verifyScreenshot.format === 'jpeg' ? 'image/jpeg' : 'image/png', data: verifyScreenshot.buffer.toString('base64') } },
+            ...(a11yContext ? [{ type: 'text', text: a11yContext }] : []),
+          ],
         });
-        return { success: true, steps, llmCalls };
+
+        const verifyResponse = await this.callAPI(messages);
+        
+        if (verifyResponse.error) {
+          // If verification call fails, trust the original result
+          console.log(`   ⚠️ Verification call failed, trusting original result`);
+          steps.push({
+            action: 'done',
+            description: `Computer Use completed: "${subtask}" (unverified)`,
+            success: true,
+            timestamp: Date.now(),
+          });
+          return { success: true, steps, llmCalls };
+        }
+
+        // Parse verification response
+        const verifyText = verifyResponse.content
+          .filter((b: ContentBlock) => (b as TextBlock).type === 'text')
+          .map((b: ContentBlock) => (b as TextBlock).text)
+          .join('');
+        
+        console.log(`   🔍 Verification: ${verifyText.substring(0, 120)}${verifyText.length > 120 ? '...' : ''}`);
+
+        // Check if verified
+        const verifiedMatch = verifyText.match(/"verified"\s*:\s*(true|false)/);
+        const isVerified = verifiedMatch ? verifiedMatch[1] === 'true' : !verifyText.toLowerCase().includes('"verified": false');
+
+        if (isVerified) {
+          console.log(`   ✅ Computer Use: subtask VERIFIED complete`);
+          steps.push({
+            action: 'done',
+            description: `Computer Use completed (verified): "${subtask}"`,
+            success: true,
+            timestamp: Date.now(),
+          });
+          return { success: true, steps, llmCalls };
+        }
+
+        // Not verified — Claude should continue with recovery
+        console.log(`   ❌ Verification FAILED — continuing with recovery`);
+        messages.push({
+          role: 'assistant',
+          content: verifyResponse.content,
+        });
+        
+        // Push Claude to take corrective action
+        messages.push({
+          role: 'user',
+          content: 'The task is NOT complete. Use the recovery steps you identified to fix it. Continue working.',
+        });
+        
+        // Continue the loop — Claude will take corrective action
+        continue;
       }
 
       // If max_tokens → ran out of space

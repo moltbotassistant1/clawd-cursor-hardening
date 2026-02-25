@@ -37,7 +37,20 @@ RULES:
 2. ONE JSON only. Use "sequence" for multi-step flows (forms)
 3. NEVER repeat completed actions. Track progress
 4. PREFER a11y_* actions over pixel coords when accessibility data available
-5. Use sequences to batch predictable steps`;
+5. Use sequences to batch predictable steps
+6. PREFER keyboard shortcuts over mouse clicks — faster and resolution-independent:
+   - Open app: Super → type name → Return (or Win+R → type exe → Return)
+   - Save file: ctrl+s → type path → Return
+   - New tab: ctrl+t → type URL → Return
+   - Address bar: ctrl+l → type URL → Return
+   - Close app: alt+F4
+   - Switch app: alt+Tab
+   - Select all: ctrl+a | Copy: ctrl+c | Paste: ctrl+v | Undo: ctrl+z
+   - Find: ctrl+f | New file: ctrl+n | Print: ctrl+p
+   - Calculator: type expression with keyboard (e.g. "1337*42=") instead of clicking buttons
+   - File Explorer: Win+e | Desktop: Win+d | Run: Win+r
+   - Focus existing window instead of re-launching apps
+7. NEVER report success without verifying — check the screen/a11y tree to confirm the action worked`;
 
 const DECOMPOSE_SYSTEM_PROMPT = `Decompose desktop tasks into atomic sub-tasks. Return ONLY a JSON array of strings.
 

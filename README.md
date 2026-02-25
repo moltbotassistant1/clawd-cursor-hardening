@@ -43,17 +43,34 @@
 
 ## Quick Start
 
-```bash
+### Windows
+
+```powershell
 git clone https://github.com/AmrDab/clawd-cursor.git
 cd clawd-cursor
 npm install
 npm run build
+npm run doctor
+npm start
 ```
 
-Run the doctor to auto-configure:
+### macOS
+
 ```bash
+git clone https://github.com/AmrDab/clawd-cursor.git
+cd clawd-cursor && npm install && npm run build
+
+# Grant Accessibility permissions to your terminal first!
+# System Settings → Privacy & Security → Accessibility → Add Terminal/iTerm
+
+# Make macOS scripts executable
+chmod +x scripts/mac/*.sh scripts/mac/*.jxa
+
 npm run doctor
+npm start
 ```
+
+> 📖 See [docs/MACOS-SETUP.md](docs/MACOS-SETUP.md) for the full macOS onboarding guide.
 
 The doctor will:
 1. Test your screen capture and accessibility bridge
@@ -61,14 +78,10 @@ The doctor will:
 3. Test each model and find what works
 4. Build your optimal pipeline and save it
 
-Then start:
-```bash
-npm start
-```
-
 Send a task:
 ```bash
-curl http://localhost:3847/task -d '{"task": "Open Notepad and type hello world"}'
+curl http://localhost:3847/task -H "Content-Type: application/json" \
+  -d '{"task": "Open Notepad and type hello world"}'
 ```
 
 ### Provider Quick Setup
@@ -240,15 +253,43 @@ Options:
   --debug                Save screenshots to debug/ folder
 ```
 
+## Platform Support
+
+| Platform | UI Automation | Browser (CDP) | Status |
+|----------|---------------|---------------|--------|
+| **Windows** | PowerShell + .NET UI Automation | ✅ Chrome/Edge | ✅ Full support |
+| **macOS** | JXA + System Events (Accessibility API) | ✅ Chrome/Edge | ✅ Full support |
+| **Linux** | — | ✅ Chrome/Edge (CDP only) | 🔶 Browser only |
+
+### Platform Notes
+
+- **Windows**: Uses `powershell.exe` + `.NET UIAutomationClient` for native app interaction. Shell chaining: `cd dir; npm start`
+- **macOS**: Uses `osascript` + JXA (JavaScript for Automation) + System Events. Requires Accessibility permissions. Shell chaining: `cd dir && npm start`. See [docs/MACOS-SETUP.md](docs/MACOS-SETUP.md).
+- **Both**: CDPDriver (browser automation) works identically — connects via WebSocket to `localhost:9222`.
+
+### Browser CDP Setup
+
+```bash
+# Windows (PowerShell)
+Start-Process chrome --ArgumentList "--remote-debugging-port=9222"
+
+# macOS (Bash)
+open -a "Google Chrome" --args --remote-debugging-port=9222
+
+# Edge on macOS
+open -a "Microsoft Edge" --args --remote-debugging-port=9222
+```
+
 ## Prerequisites
 
-- **Node.js 20+**
-- **PowerShell** (Windows) or **osascript** (macOS) - for accessibility features
+- **Node.js 18+** (20+ recommended)
+- **Windows**: PowerShell (included with Windows)
+- **macOS 13+**: osascript (included), Accessibility permissions granted
 - **AI API Key** - optional. Works offline with Ollama or Action Router only.
 
 ## Tech Stack
 
-TypeScript · Node.js · @nut-tree-fork/nut-js · sharp · Express · Anthropic Computer Use API · Windows UI Automation · Ollama
+TypeScript · Node.js · @nut-tree-fork/nut-js · sharp · Express · Anthropic Computer Use API · Windows UI Automation · macOS Accessibility (JXA) · Ollama
 
 ## License
 

@@ -38,7 +38,15 @@ RULES:
 2. Prefer a11y_click over coordinate clicks — more reliable
 3. If the target element isn't in the tree, return {"action":"unsure"}
 4. For typing into fields: a11y_focus first, then type
-5. Return ONLY valid JSON, no other text`;
+5. Return ONLY valid JSON, no other text
+6. PREFER keyboard shortcuts — faster and more reliable than clicking:
+   - Save: key_press "ctrl+s" instead of clicking Save button
+   - Close: key_press "alt+F4" instead of clicking X
+   - New tab: key_press "ctrl+t" | Address bar: key_press "ctrl+l"
+   - Calculator: type "1337*42=" instead of clicking individual buttons
+   - Select all: "ctrl+a" | Copy: "ctrl+c" | Paste: "ctrl+v"
+   - If app is already open, focus it instead of re-launching
+7. VERIFY outcomes — check the UI state after actions to confirm success`;
 
 interface ReasonerResult {
   handled: boolean;

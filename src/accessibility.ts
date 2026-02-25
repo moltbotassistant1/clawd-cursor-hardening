@@ -498,7 +498,11 @@ export class AccessibilityBridge {
       }, (error, stdout, stderr) => {
         if (error) {
           const stderrMsg = stderr ? stderr.trim().substring(0, 500) : '';
-          console.error(`Accessibility script error (${resolvedScript}): ${error.message}${stderrMsg ? '\n  stderr: ' + stderrMsg : ''}`);
+          const stdoutMsg = stdout ? stdout.trim().substring(0, 300) : '';
+          console.error(`Accessibility script error (${resolvedScript}): ${error.message}${stderrMsg ? '\n  stderr: ' + stderrMsg : ''}${stdoutMsg ? '\n  stdout: ' + stdoutMsg : ''}`);
+          if (PLATFORM === 'darwin' && !stderrMsg && !stdoutMsg) {
+            console.error(`  hint: On macOS, grant Accessibility permission to Terminal/iTerm in System Settings > Privacy & Security > Accessibility. The app running "node" (not just Terminal) may need permission.`);
+          }
           reject(error);
           return;
         }

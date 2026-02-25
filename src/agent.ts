@@ -1,3 +1,6 @@
+// NOTE: On Bash/macOS, use && to chain commands (e.g., cd dir && npm start)
+// On PowerShell (Windows), use ; instead of && (e.g., cd dir; npm start)
+
 /**
  * Agent — the main orchestration loop.
  *
@@ -28,6 +31,8 @@ import { ActionRouter } from './action-router';
 import { SafetyTier } from './types';
 import { ComputerUseBrain } from './computer-use';
 import { A11yReasoner } from './a11y-reasoner';
+import { BrowserLayer } from './browser-layer';
+import { SmartInteractionLayer } from './smart-interaction';
 import { loadPipelineConfig } from './doctor';
 import type { PipelineConfig } from './providers';
 import type { ClawdConfig, AgentState, TaskResult, StepResult, InputAction, A11yAction } from './types';
@@ -45,6 +50,8 @@ export class Agent {
   private router: ActionRouter;
   private computerUse: ComputerUseBrain | null = null;
   private reasoner: A11yReasoner | null = null;
+  private browserLayer: BrowserLayer | null = null;
+  private smartInteraction: SmartInteractionLayer | null = null;
   private config: ClawdConfig;
   private hasApiKey: boolean;
   private state: AgentState = {
@@ -79,6 +86,21 @@ export class Agent {
 
   async connect(): Promise<void> {
     await this.desktop.connect();
+
+    // Initialize Browser Layer (Layer 0) — Playwright for browser tasks
+    const pipelineConfig = loadPipelineConfig();
+    this.browserLayer = new BrowserLayer(this.config, pipelineConfig || {} as PipelineConfig);
+    console.log(`🌐 Layer 0 (Browser): Playwright — CDP or managed Chromium`);
+
+    // Initialize Smart Interaction Layer (Layer 1.5) — CDPDriver + UIDriver
+    this.smartInteraction = new SmartInteractionLayer(
+      this.a11y,
+      this.config,
+      pipelineConfig || null,
+    );
+    if (this.smartInteraction.isAvailable()) {
+      console.log(`🧩 Layer 1.5 (Smart Interaction): CDPDriver + UIDriver — 1 LLM call planning`);
+    }
 
     // Initialize Computer Use if Anthropic provider
     if (ComputerUseBrain.isSupported(this.config)) {
@@ -139,6 +161,53 @@ export class Agent {
     //   → LLM vision fallback for complex ones
     // ═══════════════════════════════════════════════════════════════
 
+    // ── Layer 0: Browser (Playwright) ──
+    // If the task is browser-related, try Playwright first — instant, no screenshots needed
+    const isBrowserTask = BrowserLayer.isBrowserTask(task);
+    if (this.browserLayer && isBrowserTask) {
+      this.state.status = 'acting';
+      const browserResult = await this.browserLayer.executeTask(task);
+      if (browserResult.handled && browserResult.success) {
+        const result: TaskResult = {
+          success: true,
+          steps: browserResult.steps || [],
+          duration: Date.now() - startTime,
+        };
+        console.log(`\n⏱️  Task took ${(result.duration / 1000).toFixed(1)}s with ${result.steps.length} steps (0 LLM calls — Playwright)`);
+        this.state = { status: 'idle', stepsCompleted: result.steps.length, stepsTotal: result.steps.length };
+        return result;
+      }
+      // Browser layer couldn't handle it — fall through to Smart Interaction
+      if (browserResult.handled === false) {
+        console.log(`   🌐 Browser Layer: falling through to Smart Interaction`);
+      }
+    }
+
+    // ── Layer 1.5: Smart Interaction (CDPDriver + UIDriver) ──
+    // Uses 1 cheap LLM call to read context + plan, then executes all steps free.
+    // For browser tasks: CDPDriver via CDP port 9222
+    // For native tasks: UIDriver via Windows UI Automation
+    if (this.smartInteraction?.isAvailable()) {
+      this.state.status = 'acting';
+      console.log(`\n🧩 Smart Interaction Layer: attempting "${task}"`);
+      const smartResult = await this.smartInteraction.tryHandle(task, isBrowserTask);
+      if (smartResult.handled && smartResult.success) {
+        const result: TaskResult = {
+          success: true,
+          steps: smartResult.steps,
+          duration: Date.now() - startTime,
+        };
+        console.log(`\n⏱️  Task took ${(result.duration / 1000).toFixed(1)}s with ${result.steps.length} steps (${smartResult.llmCalls} LLM call — Smart Interaction)`);
+        this.state = { status: 'idle', stepsCompleted: result.steps.length, stepsTotal: result.steps.length };
+        return result;
+      }
+      // Smart Interaction couldn't handle it — fall through to Computer Use
+      if (!smartResult.handled) {
+        console.log(`   🧩 Smart Interaction: falling through to Computer Use — ${smartResult.description || 'not handled'}`);
+      }
+    }
+
+    // ── Layer 2: Computer Use / Decompose+Route (expensive fallback) ──
     if (this.computerUse) {
       return this.executeWithComputerUse(task, debugDir, startTime);
     } else {
@@ -501,6 +570,7 @@ export class Agent {
 
   disconnect(): void {
     this.desktop.disconnect();
+    this.smartInteraction?.disconnect().catch(() => {});
   }
 
   private async executeA11yAction(action: A11yAction): Promise<void> {
