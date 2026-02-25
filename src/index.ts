@@ -145,31 +145,77 @@ program
       // One-shot mode: clawdcursor task "Open Calculator"
       await sendTask(text);
     } else {
-      // Interactive mode: clawdcursor task
-      const readline = await import('readline');
-      const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-      });
+      // Interactive mode: spawn a new terminal window
+      const os = await import('os');
+      const { execFile: spawnExec } = await import('child_process');
+      const platform = os.platform();
 
-      console.log('🐾 Clawd Cursor — Interactive Task Mode');
-      console.log('   Type a task and press Enter. Type "quit" to exit.\n');
+      const scriptContent = platform === 'win32'
+        ? // Windows: PowerShell script
+          `
+$host.UI.RawUI.WindowTitle = "🐾 Clawd Cursor — Task Console"
+Write-Host "🐾 Clawd Cursor — Interactive Task Mode" -ForegroundColor Cyan
+Write-Host "   Type a task and press Enter. Type 'quit' to exit." -ForegroundColor Gray
+Write-Host ""
+while ($true) {
+    $task = Read-Host "Enter task"
+    if (-not $task -or $task -eq "quit" -or $task -eq "exit") {
+        Write-Host "👋 Bye!"
+        break
+    }
+    Write-Host "🐾 Sending: $task" -ForegroundColor Yellow
+    try {
+        $response = Invoke-RestMethod -Uri http://127.0.0.1:${opts.port}/task -Method POST -ContentType "application/json" -Body ('{"task": "' + $task.Replace('"', '\\"') + '"}')
+        $response | ConvertTo-Json -Depth 5
+    } catch {
+        Write-Host "Failed to connect. Is clawdcursor start running?" -ForegroundColor Red
+    }
+    Write-Host ""
+}
+`
+        : // macOS/Linux: bash script
+          `
+echo "🐾 Clawd Cursor — Interactive Task Mode"
+echo "   Type a task and press Enter. Type 'quit' to exit."
+echo ""
+while true; do
+    printf "Enter task: "
+    read task
+    if [ -z "$task" ] || [ "$task" = "quit" ] || [ "$task" = "exit" ]; then
+        echo "👋 Bye!"
+        break
+    fi
+    echo "🐾 Sending: $task"
+    curl -s -X POST http://127.0.0.1:${opts.port}/task -H "Content-Type: application/json" -d "{\\"task\\": \\"$task\\"}" | python3 -m json.tool 2>/dev/null || echo "Failed to connect. Is clawdcursor start running?"
+    echo ""
+done
+`;
 
-      const askTask = () => {
-        rl.question('Enter task: ', async (input: string) => {
-          const trimmed = input.trim();
-          if (!trimmed || trimmed.toLowerCase() === 'quit' || trimmed.toLowerCase() === 'exit') {
-            console.log('👋 Bye!');
-            rl.close();
-            return;
-          }
-          await sendTask(trimmed);
-          console.log('');
-          askTask();
-        });
-      };
+      if (platform === 'win32') {
+        // Write temp PS1 and open in new Windows Terminal / PowerShell window
+        const fs = await import('fs');
+        const path = await import('path');
+        const tmpScript = path.join(os.tmpdir(), 'clawd-task-console.ps1');
+        fs.writeFileSync(tmpScript, scriptContent);
+        spawnExec('powershell.exe', [
+          '-Command', `Start-Process powershell -ArgumentList '-NoExit','-ExecutionPolicy','Bypass','-File','${tmpScript}'`
+        ], { detached: true, stdio: 'ignore' } as any);
+      } else if (platform === 'darwin') {
+        const fs = await import('fs');
+        const path = await import('path');
+        const tmpScript = path.join(os.tmpdir(), 'clawd-task-console.sh');
+        fs.writeFileSync(tmpScript, scriptContent, { mode: 0o755 });
+        spawnExec('open', ['-a', 'Terminal', tmpScript], { detached: true, stdio: 'ignore' } as any);
+      } else {
+        // Linux fallback
+        const fs = await import('fs');
+        const path = await import('path');
+        const tmpScript = path.join(os.tmpdir(), 'clawd-task-console.sh');
+        fs.writeFileSync(tmpScript, scriptContent, { mode: 0o755 });
+        spawnExec('x-terminal-emulator', ['-e', tmpScript], { detached: true, stdio: 'ignore' } as any);
+      }
 
-      askTask();
+      console.log('🐾 Task console opened in a new terminal window.');
     }
   });
 
