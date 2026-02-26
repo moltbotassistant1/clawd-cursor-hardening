@@ -8,7 +8,7 @@
     "clawdcursor": "dist/index.js"
   },
   "scripts": {
-    "build": "tsc && node -e \"console.log('\\n🐾 Clawd Cursor installed! Available commands:\\n\\n  clawdcursor doctor    Auto-detect and configure your AI\\n  clawdcursor start     Start the agent\\n  clawdcursor task      Send a task\\n  clawdcursor stop      Stop the agent\\n  clawdcursor dashboard Open the web dashboard\\n')\"",
+    "build": "tsc && node -e \"console.log('\\n🐾 Clawd Cursor installed! Available commands:\\n\\n  clawdcursor install   Set up API key, configure pipeline, register as OpenClaw skill\\n  clawdcursor doctor    Auto-detect and configure your AI\\n  clawdcursor start     Start the agent\\n  clawdcursor task      Send a task\\n  clawdcursor stop      Stop the agent\\n  clawdcursor dashboard Open the web dashboard\\n  clawdcursor uninstall Remove all config, data, and OpenClaw registration\\n')\"",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js start",
     "stop": "node dist/index.js stop",

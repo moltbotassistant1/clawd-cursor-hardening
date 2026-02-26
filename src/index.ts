@@ -259,4 +259,118 @@ program
     }
   });
 
+program
+  .command('install')
+  .description('Register Clawd Cursor as an OpenClaw skill and save config')
+  .option('--api-key <key>', 'AI provider API key')
+  .option('--provider <provider>', 'AI provider (anthropic|openai|ollama|kimi)')
+  .action(async (opts) => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const os = await import('os');
+
+    console.log('\n🐾 Installing Clawd Cursor...\n');
+
+    const clawdRoot = path.resolve(__dirname, '..');
+
+    // 1. Save API key to .env if provided
+    if (opts.apiKey) {
+      const envPath = path.join(clawdRoot, '.env');
+      const envContent = `AI_API_KEY=${opts.apiKey}\n`;
+      fs.writeFileSync(envPath, envContent);
+      console.log('   ✅ API key saved to .env');
+    }
+
+    // 2. Run doctor (auto-configures pipeline + registers OpenClaw skill)
+    const { runDoctor } = await import('./doctor');
+    await runDoctor({
+      apiKey: opts.apiKey || process.env.AI_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || '',
+      provider: opts.provider,
+      save: true,
+    });
+
+    console.log('\n🐾 Installation complete! Run: clawdcursor start');
+  });
+
+program
+  .command('uninstall')
+  .description('Remove all Clawd Cursor config, data, and OpenClaw skill registration')
+  .action(async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const os = await import('os');
+    const readline = await import('readline');
+
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const answer = await new Promise<string>((resolve) => {
+      rl.question('\n⚠️  This will remove all Clawd Cursor config and data. Continue? (y/N) ', resolve);
+    });
+    rl.close();
+
+    if (answer.toLowerCase() !== 'y') {
+      console.log('Cancelled.');
+      return;
+    }
+
+    console.log('\n🗑️  Uninstalling Clawd Cursor...\n');
+    const clawdRoot = path.resolve(__dirname, '..');
+    let removed = 0;
+
+    // 1. Remove config files
+    const configFiles = [
+      path.join(clawdRoot, '.clawd-config.json'),
+      path.join(clawdRoot, '.clawd-favorites.json'),
+      path.join(clawdRoot, '.env'),
+    ];
+    for (const f of configFiles) {
+      if (fs.existsSync(f)) {
+        fs.unlinkSync(f);
+        console.log(`   🗑️  Removed ${path.basename(f)}`);
+        removed++;
+      }
+    }
+
+    // 2. Remove debug folder
+    const debugDir = path.join(clawdRoot, 'debug');
+    if (fs.existsSync(debugDir)) {
+      fs.rmSync(debugDir, { recursive: true, force: true });
+      console.log('   🗑️  Removed debug/');
+      removed++;
+    }
+
+    // 3. Remove OpenClaw skill registration
+    const homeDir = os.homedir();
+    const skillPaths = [
+      path.join(homeDir, '.openclaw', 'workspace', 'skills', 'clawdcursor'),
+      path.join(homeDir, '.openclaw-dev', 'workspace', 'skills', 'clawdcursor'),
+    ];
+    for (const sp of skillPaths) {
+      if (fs.existsSync(sp)) {
+        const stat = fs.lstatSync(sp);
+        if (stat.isSymbolicLink()) {
+          fs.unlinkSync(sp);
+        } else {
+          fs.rmSync(sp, { recursive: true, force: true });
+        }
+        console.log(`   🗑️  Removed OpenClaw skill: ${sp}`);
+        removed++;
+      }
+    }
+
+    // 4. Remove dist folder
+    const distDir = path.join(clawdRoot, 'dist');
+    if (fs.existsSync(distDir)) {
+      fs.rmSync(distDir, { recursive: true, force: true });
+      console.log('   🗑️  Removed dist/');
+      removed++;
+    }
+
+    if (removed === 0) {
+      console.log('   Nothing to clean up.');
+    }
+
+    console.log(`\n🐾 Uninstalled. To fully remove, delete the clawd-cursor folder:`);
+    console.log(`   ${clawdRoot}\n`);
+  });
+
 program.parse();
