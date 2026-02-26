@@ -152,13 +152,12 @@ export async function runDoctor(opts: {
     } else {
       results.push({ name: `Vision model (${visionModel})`, ok: false, detail: visionResult.error || 'Failed' });
       console.log(`   ❌ ${visionModel}: ${visionResult.error}`);
-      console.log(`   💡 Your API key may be invalid or expired. Re-run with a new key:`);
-      console.log(`      clawdcursor doctor --provider ${providerKey} --api-key YOUR_NEW_KEY`);
+      console.log(`   💡 API key may be invalid or expired. Re-run:`);
+      console.log(`      clawdcursor install --provider ${providerKey} --api-key YOUR_API_KEY_HERE`);
     }
   } else {
     console.log(`   ⚠️  No API key — vision model skipped`);
-    console.log(`   💡 To enable vision, run: clawdcursor doctor --provider anthropic --api-key YOUR_KEY`);
-    console.log(`   Or set AI_API_KEY in your .env file`);
+    console.log(`   💡 Run: clawdcursor install --provider anthropic --api-key YOUR_API_KEY_HERE`);
     results.push({ name: 'Vision model', ok: false, detail: 'No API key' });
   }
 
@@ -221,17 +220,21 @@ export async function runDoctor(opts: {
       console.log(`   ❌ ${f.name}: ${f.detail}`);
     }
 
-    console.log(`\n💡 Quick fixes:`);
+    console.log(`\n💡 Quick fixes:\n`);
     if (!textModelWorks) {
-      console.log(`   Text model (free):   ollama pull qwen2.5:7b && ollama serve`);
-      console.log(`   Text model (cloud):  clawdcursor doctor --provider anthropic --api-key YOUR_KEY`);
+      console.log(`   Text LLM missing — needed for accessibility reasoning (Layer 2)`);
+      console.log(`   Free (local):  ollama pull qwen2.5:7b && ollama serve`);
+      console.log(`   Cloud:         clawdcursor install --provider anthropic --api-key YOUR_API_KEY_HERE`);
+      console.log('');
     }
     if (!visionModelWorks) {
-      console.log(`   Vision model:        clawdcursor doctor --provider anthropic --api-key YOUR_KEY`);
-      console.log(`   Or set AI_API_KEY=YOUR_KEY in your .env file`);
+      console.log(`   Vision LLM missing — needed for screenshot analysis (Layer 3)`);
+      console.log(`   Run:           clawdcursor install --provider anthropic --api-key YOUR_API_KEY_HERE`);
+      console.log(`   Supported:     Anthropic, OpenAI, or Kimi (requires API key)`);
+      console.log('');
     }
     if (!visionModelWorks && textModelWorks) {
-      console.log(`\n   Running without vision — accessibility reasoner + action router will handle most tasks.`);
+      console.log(`   ℹ️  Running without vision — action router + accessibility reasoner handle most tasks.`);
     }
   }
   console.log('');
