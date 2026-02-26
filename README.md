@@ -17,14 +17,18 @@
 
 ## What's New in v0.5.5
 
-**SKILL.md Rewrite for Agent Autonomy.** Agents now understand they have full desktop control. Identity shift framing, trigger lists, CDP direct path, async polling pattern, error recovery — all documented so agents act independently instead of asking users to do things for them.
+**Install/Uninstall, OpenClaw Auto-Registration, Doctor UX, Dashboard Favorites.**
 
-- **🧠 Agent identity shift** — SKILL.md opens with clear framing that overrides "I can't do desktop things" behavior
-- **📋 Decision framework** — "When to Use This" trigger list so agents know exactly when to reach for Clawd Cursor
-- **⚡ Two paths** — REST API for full desktop, CDP Direct for fast browser reads
-- **🔄 Async polling pattern** — step-by-step algorithm agents follow to track task completion
-- **🛠️ Error recovery** — 8 common problems with exact solutions
-- **🔗 OpenClaw integration** — documented as an installable OpenClaw skill
+- **📦 `clawdcursor install`** — one command to set up API key, configure pipeline, and register as OpenClaw skill
+- **🗑️ `clawdcursor uninstall`** — clean removal of all config, data, and skill registration
+- **🔗 Auto OpenClaw registration** — `npm run build` automatically registers as an OpenClaw skill. No extra steps.
+- **⭐ Dashboard favorites** — star commands to save them, click to re-run, persists across restarts
+- **🔒 Credential detection** — warns when starring tasks that contain API keys or passwords
+- **🩺 Doctor UX** — shows exact fix commands for missing text/vision models in summary
+- **🌐 OS tabs on website** — Windows/macOS/Linux install instructions with auto-detect
+- **🧠 Dynamic OS detection** — system prompt uses actual OS, not hardcoded "Windows 11" (thanks @molty)
+- **🛡️ Security** — agents cannot self-approve confirm-tier actions, autonomous use scoped to read-only
+- **📝 SKILL.md rewrite** — agent identity shift framing, trigger lists, CDP direct path, async polling, error recovery
 
 ### v0.5.2 — Web Dashboard + Browser Foreground Focus Full web UI for controlling tasks, real-time logs, and the AI now brings the browser to the foreground so you see everything it does — like watching a cursor move.
 
