@@ -15,6 +15,9 @@ All notable changes to Clawd Cursor will be documented in this file.
 - **Post-build help message** — shows all available commands after `npm run build`
 - **Dynamic OS detection** — system prompt uses actual OS instead of hardcoded "Windows 11" (thanks @molty)
 
+### Fixed
+- **Windows skill detection** — removed `requires.bins` from SKILL.md; OpenClaw's `hasBinary()` doesn't handle Windows PATHEXT (`.exe`/`.cmd`), causing the skill to show as "missing" even when node is installed
+
 ### Changed
 - **SKILL.md rewritten** — agent identity shift framing, trigger lists, CDP direct path, async polling, error recovery
 - **Security hardened** — agents cannot self-approve confirm-tier actions, autonomous use scoped to read-only
