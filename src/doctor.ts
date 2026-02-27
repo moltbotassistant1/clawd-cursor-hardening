@@ -487,34 +487,73 @@ function buildPipelineFromSelection(
 }
 
 async function detectGpuInfo(): Promise<string | null> {
-  if (process.platform !== 'win32') {
-    return null;
+  if (process.platform === 'win32') {
+    try {
+      const { stdout } = await execFileAsync('nvidia-smi', [
+        '--query-gpu=name,memory.total',
+        '--format=csv,noheader,nounits',
+      ]);
+      const lines = stdout
+        .split(/\r?\n/)
+        .map(l => l.trim())
+        .filter(Boolean);
+
+      if (lines.length === 0) return null;
+
+      return lines
+        .map(line => {
+          const parts = line.split(',').map(p => p.trim());
+          return parts.length >= 2 ? `${parts[0]} (${parts[1]} MB VRAM)` : line;
+        })
+        .join(' | ');
+    } catch {
+      return null;
+    }
   }
 
-  try {
-    const { stdout } = await execFileAsync('nvidia-smi', [
-      '--query-gpu=name,memory.total',
-      '--format=csv,noheader,nounits',
-    ]);
-    const lines = stdout
-      .split(/\r?\n/)
-      .map(l => l.trim())
-      .filter(Boolean);
+  if (process.platform === 'darwin') {
+    try {
+      // system_profiler -json is the canonical Mac GPU query.
+      const { stdout } = await execFileAsync('system_profiler', [
+        'SPDisplaysDataType',
+        '-json',
+      ]);
+      const data = JSON.parse(stdout) as { SPDisplaysDataType?: Record<string, unknown>[] };
+      const entries = data?.SPDisplaysDataType ?? [];
 
-    if (lines.length === 0) return null;
+      const gpus = await Promise.all(
+        entries.map(async (d: Record<string, unknown>) => {
+          const name = (d['sppci_model'] as string | undefined) || (d['_name'] as string | undefined) || 'Unknown GPU';
+          // Discrete GPUs (Intel/AMD/NVIDIA on older Macs) expose VRAM directly.
+          const vram = (d['spdisplays_vram'] as string | undefined) || (d['spdisplays_vram_shared'] as string | undefined);
+          if (vram) return `${name} (${vram} VRAM)`;
 
-    const summarized = lines.map(line => {
-      const parts = line.split(',').map(p => p.trim());
-      if (parts.length >= 2) {
-        return `${parts[0]} (${parts[1]} MB VRAM)`;
-      }
-      return line;
-    });
+          // Apple Silicon uses unified memory — show GPU cores + total RAM instead.
+          const gpuCores = d['sppci_cores'] as string | number | undefined;
+          if (gpuCores) {
+            let unifiedMem = '';
+            try {
+              const { stdout: memOut } = await execFileAsync('sysctl', ['-n', 'hw.memsize']);
+              const bytes = parseInt(memOut.trim(), 10);
+              if (!Number.isNaN(bytes)) {
+                unifiedMem = ` / ${Math.round(bytes / 1073741824)} GB unified`;
+              }
+            } catch { /* ignore */ }
+            return `${name} (${gpuCores} GPU cores${unifiedMem})`;
+          }
 
-    return summarized.join(' | ');
-  } catch {
-    return null;
+          return name;
+        }),
+      );
+
+      const filtered = gpus.filter(Boolean) as string[];
+      return filtered.length > 0 ? filtered.join(' | ') : null;
+    } catch {
+      return null;
+    }
   }
+
+  return null;
 }
 
 async function promptPipelineSelection(

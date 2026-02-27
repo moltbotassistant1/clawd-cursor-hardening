@@ -65,7 +65,15 @@ export class BrowserLayer {
       'task manager', 'activity monitor', 'terminal', 'powershell', 'cmd',
       'desktop', 'folder', 'window', 'control panel', 'registry',
     ];
-    const hasPathLike = /[a-z]:\\/i.test(task) || /%userprofile%/i.test(task) || /\\(desktop|documents|downloads)/i.test(task);
+    const hasPathLike =
+      // Windows paths: C:\, %USERPROFILE%, \Desktop etc.
+      /[a-z]:\\/i.test(task) ||
+      /%userprofile%/i.test(task) ||
+      /\\(desktop|documents|downloads)/i.test(task) ||
+      // macOS paths: ~/..., /Users/..., /Applications/..., /Library/..., common dirs
+      /^~\//.test(task) ||
+      /\/Users\/[^/\s]+/.test(task) ||
+      /\/(Applications|Library|Documents|Downloads|Desktop|tmp)(?:\/|$)/i.test(task);
     if ((nativeHints.some(h => lower.includes(h)) || hasPathLike) && !/https?:\/\//i.test(task) && !/www\./i.test(task) && !/\.(com|org|net|io|dev|ai)\b/i.test(task)) {
       return false;
     }
