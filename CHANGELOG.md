@@ -2,19 +2,35 @@
 
 All notable changes to Clawd Cursor will be documented in this file.
 
-## [0.5.6] - 2026-02-26 — Global CLI Setup, Stop/Kill Hardening
+## [0.5.6] - 2026-02-27 — Fluid Decomposition, Interactive Doctor, Smart Vision Fallback
 
 ### Added
-- **`npm run setup`** — new script that builds and registers `clawdcursor` as a global command via `npm link`. Works on Windows, macOS, and Linux.
+- **Fluid LLM task decomposition** — decompose prompt now tells the LLM to reason about what ANY app needs. No more hardcoded examples. "Write me a sentence about dogs" generates actual content instead of typing the literal instruction.
+- **Interactive doctor onboarding** — after scanning providers, doctor shows all working TEXT and VISION LLM options with ★ recommendations. User picks by number, Enter for default. Shows GPU info (VRAM via nvidia-smi) to help decide local vs cloud.
+- **Cloud provider guidance** — doctor shows unconfigured providers with signup URLs and lets you paste an API key inline (auto-detects provider, saves to .env).
+- **Smart vision fallback for compound tasks** — when Router or Reasoner handles part of a multi-step task but fails midway, ALL remaining subtasks are bundled and handed to Computer Use (vision). Prevents false-success trapping in cheap layers.
+- **Ollama auto-detection** — brain auto-reconfigures to use local Ollama for decomposition when no cloud API key is set. `hasApiKey` now recognizes local LLMs.
+- **Compound task guard** — action router detects multi-step/compound tasks (commas, "then", "and then") and skips to deeper layers.
 
 ### Fixed
-- **Stop/kill port validation** — port input is now sanitized (parseInt + range check 1-65535) to prevent command injection
-- **Kill health verification** — kill command now verifies `/health` returns a Clawd Cursor response before force-killing, preventing wrong-process termination
-- **Stop verification** — stop command waits for `/health` to fail and warns if the server is still running
+- **Case-preserving action router** — all regex matches against raw (unmodified) task text. Typed text and URLs no longer get lowercased.
+- **Flexible click matching** — `click Blank document` works without quotes (was requiring `click "Blank document"`). Single unified regex for quoted and unquoted element names.
+- **PowerShell encoding** — replaced emoji (🐾) and em dash (—) in task console title that broke on Windows PowerShell due to encoding.
+- **Stale config** — `.clawd-config.json` now correctly reflects Ollama when doctor detects it (was stuck on Anthropic).
+- **Brain provider mismatch** — decomposition no longer calls Anthropic API when only Ollama is available.
 
 ### Changed
-- **Install instructions updated** — README, website, and all docs now use `npm run setup` instead of `npm run build` for the recommended install flow
-- **Build script kept pure** — `npm run build` no longer has global side effects; global registration is opt-in via `npm run setup`
+- **`npm run setup`** — new script that builds and registers `clawdcursor` as a global command via `npm link`. Works on Windows, macOS, and Linux.
+- **Stop/kill port validation** — port input is now sanitized (parseInt + range check 1-65535) to prevent command injection
+- **Kill health verification** — kill command now verifies `/health` returns a Clawd Cursor response before force-killing
+- **Install instructions updated** — README and docs now use `npm run setup`
+
+### Test Results
+| Task | Pipeline Path | Steps | LLM Calls | Time | Result |
+|------|--------------|-------|-----------|------|--------|
+| Open Notepad | Action Router | 1 | 0 | 1.5s | ✅ |
+| Open Notepad + write haiku | Router → Smart Interaction → Computer Use | 6 | 7 | 58.8s | ✅ Verified |
+| Open Google Doc in Edge + write sentence | Browser → Computer Use | 17 | 9 | 78.8s | ✅ Verified |
 
 ## [0.5.5] - 2026-02-26 — Install/Uninstall, OpenClaw Auto-Registration, Doctor UX
 

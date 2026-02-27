@@ -19,20 +19,16 @@
 
 ---
 
-## What's New in v0.5.5
+## What's New in v0.5.6
 
-**Install/Uninstall, OpenClaw Auto-Registration, Doctor UX, Dashboard Favorites.**
+**Fluid LLM Decomposition, Interactive Doctor, Smart Vision Fallback.**
 
-- **📦 `clawdcursor install`** — one command to set up API key, configure pipeline, and register as OpenClaw skill
-- **🗑️ `clawdcursor uninstall`** — clean removal of all config, data, and skill registration
-- **🔗 Auto OpenClaw registration** — `npm run build` automatically registers as an OpenClaw skill. No extra steps.
-- **⭐ Dashboard favorites** — star commands to save them, click to re-run, persists across restarts
-- **🔒 Credential detection** — warns when starring tasks that contain API keys or passwords
-- **🩺 Doctor UX** — shows exact fix commands for missing text/vision models in summary
-- **🌐 OS tabs on website** — Windows/macOS/Linux install instructions with auto-detect
-- **🧠 Dynamic OS detection** — system prompt uses actual OS, not hardcoded "Windows 11" (thanks @joshholly)
-- **🛡️ Security** — agents cannot self-approve confirm-tier actions, autonomous use scoped to read-only
-- **📝 SKILL.md rewrite** — agent identity shift framing, trigger lists, CDP direct path, async polling, error recovery
+- **🧠 Fluid task decomposition** — LLM reasons about what ANY app needs instead of matching hardcoded patterns. "Write me a sentence about dogs" now generates actual content, not literal text.
+- **🩺 Interactive doctor onboarding** — scans all providers (Ollama, Anthropic, OpenAI, Kimi), detects GPU/VRAM, shows TEXT and VISION LLM options with recommendations, lets you pick. Paste an API key inline to add a cloud provider.
+- **🖥️ Smart vision fallback** — when cheap layers handle part of a compound task but fail midway, remaining subtasks are bundled and handed to Computer Use (vision). No more false-success trapping.
+- **🔄 Ollama auto-detection** — brain auto-reconfigures to use local Ollama for decomposition when no cloud API key is set. No more "offline mode" when Ollama is running.
+- **🖱️ Flexible click routing** — action router handles `click Blank document` (no quotes needed), preserves case for typed text and URLs.
+- **⚡ Compound task guard** — action router detects multi-step tasks and skips to deeper layers instead of trying to handle them as single actions.
 
 ### v0.5.2 — Web Dashboard + Browser Foreground Focus Full web UI for controlling tasks, real-time logs, and the AI now brings the browser to the foreground so you see everything it does — like watching a cursor move.
 
@@ -111,9 +107,11 @@ clawdcursor start
 
 The doctor will:
 1. Test your screen capture and accessibility bridge
-2. Detect available AI providers (Anthropic, OpenAI, Ollama)
-3. Test each model and find what works
-4. Build your optimal pipeline and save it
+2. Scan all AI providers (Anthropic, OpenAI, Ollama, Kimi) and detect GPU/VRAM
+3. Test each model and show you what works with latency
+4. Let you pick your TEXT LLM and VISION LLM (or accept the recommended defaults)
+5. Show setup instructions for any unconfigured cloud providers
+6. Build your optimal pipeline and save it
 
 Send a task:
 ```bash
@@ -213,18 +211,41 @@ npm run doctor
 🩺 Clawd Cursor Doctor - diagnosing your setup...
 
 📸 Screen capture...
-   ✅ 2560x1440, 93ms
+   ✅ 2560x1440, 110ms
 ♿ Accessibility bridge...
-   ✅ 17 windows detected, 761ms
+   ✅ 20 windows detected, 822ms
 
-🔑 AI Provider: Anthropic
-   ✅ claude-haiku-4: 400ms
-   ✅ claude-sonnet-4: 1285ms
+🔍 Scanning providers...
+   Anthropic:           ✅ key found (sk-ant-a...)
+   OpenAI:              ❌ no key
+   Kimi (Moonshot):     ❌ no key
+   Ollama (Local):      ✅ running (qwen3:8b, qwen2.5:7b, deepseek-r1:8b)
 
-🧠 Recommended pipeline:
-   Layer 1: Action Router (offline, instant) ✅
-   Layer 2: Accessibility Reasoner → claude-haiku-4 ✅
-   Layer 3: Screenshot → claude-sonnet-4 ✅
+   💡 Cloud providers not configured (add API keys to unlock):
+      OpenAI: set OPENAI_API_KEY — https://platform.openai.com (GPT-4o vision)
+      Kimi: set MOONSHOT_API_KEY — https://platform.moonshot.cn (256k context, affordable)
+
+   Testing models...
+   Text:   claude-haiku-4-5 (Anthropic) ✅ 498ms
+   Vision: claude-sonnet-4 (Anthropic) ✅ 1217ms
+   Text:   qwen2.5:7b (Ollama) ✅ 4117ms
+
+🎮 GPU detected: NVIDIA GeForce RTX 3080 (10240 MB VRAM)
+
+🧩 Choose your pipeline models (press Enter for recommended).
+   TEXT LLM (Layer 2):
+   1. claude-haiku-4-5 (Anthropic, 498ms)
+   2. qwen2.5:7b (Ollama, 4117ms) ★ recommended
+   Pick 1-2 (Enter=2):
+
+   VISION LLM (Layer 3):
+   1. claude-sonnet-4 (Anthropic, 1217ms) ★ recommended
+   Pick 1 (Enter=1):
+
+🧠 Selected pipeline:
+   Layer 1: Action Router (offline) ✅
+   Layer 2: qwen2.5:7b via Ollama ✅
+   Layer 3: claude-sonnet-4 via Anthropic ✅
    🖥️  Computer Use API: enabled
 
 💾 Config saved to .clawd-config.json
