@@ -19,6 +19,17 @@
 
 ---
 
+## What's New in v0.6.1
+
+**Keyboard Shortcuts, Pipeline Fixes, Better URL Handling.**
+
+- **⌨️ Keyboard shortcuts registry** — common actions (scroll, copy, reddit upvote) execute as direct keystrokes. Zero LLM calls, instant.
+- **🔧 Pipeline gate fix** — Action Router now always runs, even for browser-context tasks. Shortcuts work everywhere.
+- **🌐 Smarter URL extraction** — "open gmail and send email to foo@bar.com" correctly navigates to Gmail instead of bar.com.
+- **🔄 CDP→UIDriver fallback** — Smart Interaction falls back to accessibility tree when browser CDP fails.
+- **🛑 Reliable force-stop** — `clawdcursor stop` kills lingering processes.
+- **📊 Provider label inference** — startup logs show text/vision providers clearly.
+
 ## What's New in v0.6.0
 
 **Universal Provider Support, OpenClaw Integration, Security Hardening.**
@@ -199,9 +210,11 @@ Every task flows through up to 5 layers. Each layer is cheaper and faster than t
 │  Direct browser control via CDP. page.goto(),        │
 │  brings Chrome to foreground. Zero vision tokens.     │
 ├─────────────────────────────────────────────────────┤
-│  Layer 1: Action Router (instant, free)              │
+│  Layer 1: Action Router + Shortcuts (instant, free)  │
 │  Regex + UI Automation. "Open X", "type Y", "click Z"│
-│  Handles ~80% of simple tasks with ZERO LLM calls    │
+│  Includes keyboard shortcuts registry — common       │
+│  actions like scroll, copy, undo, reddit upvote      │
+│  execute as direct keystrokes. Zero LLM calls.       │
 ├─────────────────────────────────────────────────────┤
 │  Layer 1.5: Smart Interaction (1 LLM call)           │
 │  CDPDriver (browser) or UIDriver (desktop apps).     │
@@ -218,6 +231,20 @@ Every task flows through up to 5 layers. Each layer is cheaper and faster than t
 ```
 
 **The doctor decides which layers are available** based on your setup. No API key? Layers 0-2 with Ollama. Anthropic key? All layers with Computer Use.
+
+### Keyboard Shortcuts (Layer 1)
+
+Clawd Cursor ships with a keyboard shortcuts registry. Common actions execute as direct keystrokes — no LLM calls, no screenshots, instant.
+
+| Category | Examples |
+|----------|----------|
+| Navigation | scroll up/down, page up/down, go back/forward |
+| Editing | copy, paste, undo, redo, select all |
+| Browser | new tab, close tab, refresh, find |
+| Social | reddit upvote/downvote, next/prev post |
+| System | minimize, maximize, switch window |
+
+Custom shortcuts can be added to `src/shortcuts.ts`. The action router uses fuzzy matching — "scroll the page down" maps to the scroll-down shortcut automatically.
 
 ### Provider-Specific Behavior
 
@@ -337,8 +364,8 @@ Options:
 │  ┌────────┐ ┌────────┐ ┌───────┐ ┌─────┐ ┌─────┐│
 │  │Layer 0 │ │Layer 1 │ │L 1.5  │ │ L2  │ │ L3  ││
 │  │Browser │→│Action  │→│Smart  │→│A11y │→│Vision││
-│  │Playwrt │ │Router  │ │Interac│ │Tree │ │+CU   ││
-│  │(free)  │ │(free)  │ │(1 LLM)│ │(cheap│ │(full)││
+│  │Playwrt │ │Router+ │ │Interac│ │Tree │ │+CU   ││
+│  │(free)  │ │Shortct │ │(1 LLM)│ │(cheap│ │(full)││
 │  └────────┘ └────────┘ └───────┘ └─────┘ └─────┘│
 │       ↑                                            │
 │  ┌──────────┐  ┌────────────────┐                 │

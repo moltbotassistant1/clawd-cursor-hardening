@@ -1,6 +1,6 @@
 ---
 name: clawdcursor
-version: 0.6.0
+version: 0.6.1
 description: >
   AI desktop agent — control any app on Windows/macOS from your OpenClaw agent.
   Send natural language tasks to the Clawd Cursor API and it handles everything:
@@ -300,15 +300,17 @@ const buttons = await page.$$eval('button', els => els.map(e => e.textContent));
 
 ---
 
-## How It Works — 4-Layer Pipeline
+## How It Works — 5-Layer Pipeline
 
 | Layer | What | Speed | Cost |
 |-------|------|-------|------|
 | **0: Browser Layer** | URL detection → direct navigation | Instant | Free |
-| **1: Action Router** | Regex + UI Automation | Instant | Free |
+| **1: Action Router + Shortcuts** | Regex + UI Automation + keyboard shortcuts | Instant | Free |
 | **1.5: Smart Interaction** | 1 LLM plan → CDP/UIDriver executes | ~2-5s | 1 LLM call |
 | **2: Accessibility Reasoner** | UI tree → text LLM decides | ~1s | Cheap |
 | **3: Computer Use** | Screenshot → vision LLM | ~5-8s | Expensive |
+
+Layer 1 includes keyboard shortcuts — common actions execute as direct keystrokes (0 LLM calls).
 
 80%+ of tasks handled by Layer 0-1 (free, instant). Vision model is last resort only.
 

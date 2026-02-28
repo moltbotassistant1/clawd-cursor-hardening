@@ -2,6 +2,25 @@
 
 All notable changes to Clawd Cursor will be documented in this file.
 
+## [0.6.1] - 2026-02-28 — Keyboard Shortcuts, Pipeline Fixes
+
+### Added
+- **Keyboard shortcuts registry** (`src/shortcuts.ts`) — 30+ common actions mapped to direct keystrokes. Scroll, copy, paste, undo, reddit upvote/downvote, browser shortcuts, and more. Zero LLM calls.
+- **Fuzzy shortcut matching** — "scroll the page down" fuzzy-matches to scroll-down shortcut. Context-aware matching for social media actions.
+- **Router telemetry** — Action Router now logs match type, confidence, and shortcut hits.
+- **CDP→UIDriver fallback** — Smart Interaction falls back to accessibility tree automation when browser CDP path fails.
+- **Gmail, Outlook, Hotmail** added to Browser Layer site map.
+
+### Fixed
+- **Pipeline gate bug** — Action Router was gated behind `!isBrowserTask`, causing shortcuts to be skipped for browser-context tasks (e.g., "reddit upvote" matched browser regex but should use shortcut). Action Router now always runs after Browser Layer.
+- **URL extraction false positives** — "open gmail and send email to foo@bar.com" no longer extracts `bar.com`. URL extraction now isolates the navigation clause before matching.
+- **Reliable force-stop** — `clawdcursor stop` now force-kills lingering processes via PID file.
+- **Provider label inference** — startup logs now clearly show text and vision provider names separately.
+
+### Changed
+- Pipeline order: Browser Layer (L0) → Action Router + Shortcuts (L1) → Smart Interaction (L1.5) → A11y Reasoner (L2) → Vision (L3). Action Router no longer gated.
+- `extractUrl()` uses navigation clause isolation instead of matching against full task text.
+
 ## [0.6.0] - 2026-02-28 — Universal Provider Support, OpenClaw Integration
 
 ### Added
