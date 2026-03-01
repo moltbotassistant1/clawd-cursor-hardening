@@ -225,81 +225,66 @@ export class Agent {
       stepsTotal: 1,
     };
 
-    // Pre-process: for "open X on Y" browser tasks, open the browser first via
-    // Action Router, then continue as a navigation task.
-    const openOnBrowserMatch = task.match(/^(open|launch|start)\s+(.+?)\s+on\s+(edge|chrome|google chrome|firefox|brave|safari)\s*$/i);
-    if (openOnBrowserMatch) {
-      const target = openOnBrowserMatch[2].trim();
-      const browserRaw = openOnBrowserMatch[3].trim().toLowerCase();
-      const browserNameMap: Record<string, string> = {
-        edge: 'Microsoft Edge',
-        chrome: 'Google Chrome',
-        'google chrome': 'Google Chrome',
-        firefox: 'Firefox',
-        brave: 'Brave',
-        safari: 'Safari',
-      };
-      const browserApp = browserNameMap[browserRaw] || openOnBrowserMatch[3].trim();
-      const remainingTask = `go to ${target}`;
-      console.log(`\n🔄 Pre-processing: opening "${browserApp}" first, then handling "${remainingTask}"`);
+    // ── LLM-based task pre-processor ──
+    // One cheap LLM call decomposes ANY natural language into structured intent.
+    // Replaces brittle regex patterns ("open X and Y", "open X on Y") with universal parsing.
+    const preprocessed = await this.preprocessTask(task);
+    if (preprocessed) {
+      // Open app/browser if LLM identified one
+      if (preprocessed.app) {
+        console.log(`\n🔀 Pre-processing: opening "${preprocessed.app}" first`);
+        try {
+          const openResult = await this.router.route(`open ${preprocessed.app}`);
+          if (openResult.handled) {
+            console.log(`   ✅ "${preprocessed.app}" opened via Action Router`);
+            priorContext.push(`Opened "${preprocessed.app}" — it is now the active, focused window`);
+            await new Promise(r => setTimeout(r, 2000));
 
-      try {
-        const openResult = await this.router.route(`open ${browserApp}`);
-        if (openResult.handled) {
-          console.log(`   ✅ "${browserApp}" opened via Action Router`);
-          priorContext.push(`Opened "${browserApp}" — it is now the active, focused window`);
-          await new Promise(r => setTimeout(r, 1200));
-          task = remainingTask;
-          console.log(`   ➡️ Continuing with: "${task}"`);
-        }
-      } catch (err) {
-        console.log(`   ⚠️ Pre-open browser failed: ${err} — proceeding with full task`);
-      }
-    }
-
-    // Pre-process: for "open X and Y" tasks, open the app first via Action Router,
-    // then let the pipeline handle "Y" with the app already open.
-    const openAndMatch = task.match(/^(open|launch|start)\s+(\w[\w\s]*?)\s+and\s+(.+)$/i);
-    if (openAndMatch) {
-      const appName = openAndMatch[2].trim();
-      const remainingTask = openAndMatch[3].trim();
-      console.log(`\n🔀 Pre-processing: opening "${appName}" first, then handling "${remainingTask}"`);
-      
-      try {
-        const openResult = await this.router.route(`open ${appName}`);
-        if (openResult.handled) {
-          console.log(`   ✅ "${appName}" opened via Action Router`);
-          priorContext.push(`Opened "${appName}" — it is now the active, focused window`);
-          
-          // Wait for app to fully launch
-          await new Promise(r => setTimeout(r, 2000));
-          
-          // Maximize the window so Computer Use doesn't have to
-          try {
-            await this.router.route('maximize window');
-            // Small delay to let maximize settle and dismiss any Snap Assist
-            await new Promise(r => setTimeout(r, 500));
-            // If Snap Assist appeared, press Escape to dismiss it
-            const { execFile } = require('child_process');
-            const { promisify } = require('util');
-            const execFileAsync = promisify(execFile);
+            // Maximize the window
             try {
-              await execFileAsync('powershell.exe', ['-Command', 
-                'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait("{ESC}")'
-              ]);
-            } catch { /* non-critical */ }
-            await new Promise(r => setTimeout(r, 300));
-            priorContext.push('Window maximized to full screen');
-          } catch {
-            // Not critical, Computer Use can handle it
+              await this.router.route('maximize window');
+              await new Promise(r => setTimeout(r, 500));
+              try {
+                await execFileAsync('powershell.exe', ['-Command',
+                  'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait("{ESC}")'
+                ]);
+              } catch { /* non-critical */ }
+              await new Promise(r => setTimeout(r, 300));
+              priorContext.push('Window maximized to full screen');
+            } catch { /* not critical */ }
           }
-          
-          // Now execute the remaining task with the app already open
-          task = remainingTask;
-          console.log(`   ➡️ Continuing with: "${task}"`);
+        } catch (err) {
+          console.log(`   ⚠️ Pre-open failed: ${err} — proceeding with full task`);
         }
-      } catch (err) {
-        console.log(`   ⚠️ Pre-open failed: ${err} — proceeding with full task`);
+      }
+
+      // Navigate to URL if identified — do it now via keyboard shortcut
+      if (preprocessed.navigate && preprocessed.app) {
+        console.log(`   🌐 Navigating to ${preprocessed.navigate}...`);
+        try {
+          await this.desktop.keyPress('Control+l');
+          await new Promise(r => setTimeout(r, 300));
+          await this.desktop.typeText(preprocessed.navigate);
+          await new Promise(r => setTimeout(r, 200));
+          await this.desktop.keyPress('Return');
+          await new Promise(r => setTimeout(r, 2000)); // wait for page load
+          priorContext.push(`Navigated to ${preprocessed.navigate} — page is loading`);
+          console.log(`   ✅ Navigated to ${preprocessed.navigate}`);
+        } catch (err) {
+          console.log(`   ⚠️ Navigation failed: ${err} — Computer Use will handle it`);
+          priorContext.push(`Navigate to: ${preprocessed.navigate} (attempted but may need retry)`);
+        }
+      }
+
+      // Use the refined task from LLM
+      if (preprocessed.task && preprocessed.task !== task) {
+        task = preprocessed.task;
+        console.log(`   ➡️ Continuing with: "${task}"`);
+      }
+
+      // Store context hints for shortcut matching
+      if (preprocessed.contextHints?.length) {
+        priorContext.push(`Context: ${preprocessed.contextHints.join(', ')}`);
       }
     }
 
@@ -468,6 +453,122 @@ export class Agent {
       }
     }
     return null;
+  }
+
+  /**
+   * LLM-based task pre-processor.
+   * One cheap text LLM call parses any natural language command into structured intent.
+   * Returns null if no LLM is available (falls back to direct execution).
+   */
+  private async preprocessTask(task: string): Promise<{
+    app?: string;
+    navigate?: string;
+    task: string;
+    contextHints?: string[];
+  } | null> {
+    // Need a text model to pre-process
+    if (!this.hasApiKey && !this.reasoner) return null;
+
+    // Skip pre-processing for very simple tasks (single action)
+    const simplePatterns = /^(scroll|click|type|press|copy|paste|undo|redo|save|close|minimize|maximize)\b/i;
+    if (simplePatterns.test(task)) return null;
+
+    const systemPrompt = `You are a task pre-processor for an AI desktop agent. Parse the user's command into structured JSON.
+
+Your job: identify what app/browser to open FIRST (if any), what URL to navigate to (if any), and what the REMAINING task is after the app is open.
+
+RULES:
+- "open X on Y" where Y is a browser → app is the browser, navigate is X, task is remaining work
+- "open X and Y" → app is X, task is Y
+- "go to X" or "check X" where X is a website → app is the default browser, navigate is X
+- If the task mentions a specific browser (Edge, Chrome, Firefox, Brave, Safari), use it
+- If no app needs opening, set app to null
+- contextHints: list relevant platforms/sites (e.g. "reddit", "twitter", "gmail") for shortcut matching
+- The "task" field should be what remains AFTER the app is opened and URL navigated
+- If the whole task is just "open X", task should be empty string
+
+Browser name mapping:
+- edge → Microsoft Edge
+- chrome → Google Chrome  
+- firefox → Firefox
+- brave → Brave
+- safari → Safari
+
+Respond with ONLY valid JSON, no markdown:
+{"app": "string or null", "navigate": "url or null", "task": "remaining task", "contextHints": ["hint1"]}
+
+Examples:
+- "open reddit on edge" → {"app": "Microsoft Edge", "navigate": "reddit.com", "task": "", "contextHints": ["reddit"]}
+- "open paint and draw a cat" → {"app": "Paint", "navigate": null, "task": "draw a cat", "contextHints": ["paint"]}
+- "check my email in chrome" → {"app": "Google Chrome", "navigate": "gmail.com", "task": "check email", "contextHints": ["gmail"]}
+- "go to youtube and find a funny video" → {"app": "Microsoft Edge", "navigate": "youtube.com", "task": "find a funny video", "contextHints": ["youtube"]}
+- "scroll down" → {"app": null, "navigate": null, "task": "scroll down", "contextHints": []}
+- "open reddit on edge and scroll down through posts and interact with one" → {"app": "Microsoft Edge", "navigate": "reddit.com", "task": "scroll down through posts and interact with one", "contextHints": ["reddit"]}`;
+
+    try {
+      console.log(`\n🧠 Pre-processing task with LLM...`);
+      const startTime = Date.now();
+
+      let response: string;
+
+      if (this.smartInteraction?.isAvailable()) {
+        // Use SmartInteraction's callTextModel (it handles all providers)
+        response = await (this.smartInteraction as any).callTextModel(
+          `Parse this command: "${task}"`,
+          systemPrompt,
+        );
+      } else if (this.reasoner) {
+        // Use reasoner's provider config via fetch
+        const pipelineConfig = loadPipelineConfig();
+        if (!pipelineConfig) return null;
+        const { model, baseUrl } = pipelineConfig.layer2;
+        const apiKey = pipelineConfig.apiKey || '';
+
+        const fetchResponse = await fetch(`${baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: `Parse this command: "${task}"` },
+            ],
+            temperature: 0,
+          }),
+        });
+
+        const data: any = await fetchResponse.json();
+        response = data.choices?.[0]?.message?.content || '';
+      } else {
+        return null;
+      }
+
+      const elapsed = Date.now() - startTime;
+      console.log(`   ⚡ Pre-processed in ${elapsed}ms`);
+
+      // Parse JSON from response
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        console.log(`   ⚠️ Pre-processor returned no JSON — skipping`);
+        return null;
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      console.log(`   📋 Intent: app=${parsed.app || 'none'}, navigate=${parsed.navigate || 'none'}, task="${parsed.task || task}"`);
+
+      return {
+        app: parsed.app || undefined,
+        navigate: parsed.navigate || undefined,
+        task: parsed.task || task,
+        contextHints: parsed.contextHints || [],
+      };
+    } catch (err) {
+      console.log(`   ⚠️ Pre-processor failed: ${err} — proceeding with raw task`);
+      return null;
+    }
   }
 
   /**

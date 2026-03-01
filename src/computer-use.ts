@@ -62,7 +62,14 @@ PATTERNS:
 - Recovery: dialog → key "Escape", wrong window → click correct window, app frozen → key "super+q" + reopen.
 
 SCROLLING: NEVER use mouse scroll with small amounts. For scrolling web pages use keyboard: PageDown (or fn+Down on Mac keyboards) for full page, Space for half page, or arrow keys. Mouse scroll is unreliable on modern infinite-scroll sites.
-SITE SHORTCUTS: On Reddit use j/k to move between posts, a to upvote, z to downvote, c to open comments. On Twitter/X use j/k for posts, l to like. These are far faster than clicking.
+SITE SHORTCUTS (use these instead of clicking — much faster and more reliable):
+- Reddit: j/k move between posts, a upvote, z downvote, c open comments, r reply, s save
+- Twitter/X: j/k move between tweets, l like, t retweet, r reply, m DM, n new tweet
+- YouTube: Space pause/play, f fullscreen, m mute, j/l skip 10s, k pause, Shift+> speed up
+- Gmail: j/k move between emails, e archive, # delete, r reply, c compose, / search
+- GitHub: s focus search, t file finder, l jump to line, w branch switcher
+- Slack: Ctrl+k quick switcher, Alt+Up/Down move between channels
+- Any site: / often focuses search, ? often shows keyboard shortcuts help
 
 SUBMITTING IS MANDATORY: After EVERY type() action into a chat or prompt input, you MUST immediately follow with key("Return") in the same response batch. Typing without submitting is an incomplete action. Never end a response after type() without also sending Return.
 
@@ -104,7 +111,14 @@ PATTERNS:
 - Draw in Paint/canvas: Select brush tool first (click it in toolbar). Use drag operations for lines. A stick figure needs: circle/square for head (~60px), vertical line for body (~150px), diagonal lines for arms and legs (~80px each). Use LARGE coordinates — small drags produce dots. Minimum drag distance: 50 pixels.
 
 SCROLLING: NEVER use mouse scroll with small amounts. For scrolling web pages use keyboard: PageDown (full page), Space (half page), or arrow keys. Mouse scroll is unreliable on modern infinite-scroll sites.
-SITE SHORTCUTS: On Reddit use j/k to move between posts, a to upvote, z to downvote, c to open comments. On Twitter/X use j/k for posts, l to like. These are far faster than clicking.
+SITE SHORTCUTS (use these instead of clicking — much faster and more reliable):
+- Reddit: j/k move between posts, a upvote, z downvote, c open comments, r reply, s save
+- Twitter/X: j/k move between tweets, l like, t retweet, r reply, m DM, n new tweet
+- YouTube: Space pause/play, f fullscreen, m mute, j/l skip 10s, k pause, Shift+> speed up
+- Gmail: j/k move between emails, e archive, # delete, r reply, c compose, / search
+- GitHub: s focus search, t file finder, l jump to line, w branch switcher
+- Slack: Ctrl+k quick switcher, Alt+Up/Down move between channels
+- Any site: / often focuses search, ? often shows keyboard shortcuts help
 
 Do NOT: take screenshots after every action, go one action at a time when you can batch, use search engines for known URLs, retry same failed coords.`;
 
