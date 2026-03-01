@@ -89,8 +89,15 @@ git clone https://github.com/AmrDab/clawd-cursor.git
 cd clawd-cursor
 npm install
 npm run setup      # builds + registers 'clawdcursor' command globally
-clawdcursor doctor
+
+# Just install and start — auto-configures from OpenClaw or env vars
 clawdcursor start
+
+# Or specify any provider
+clawdcursor start --base-url https://api.example.com/v1 --api-key KEY
+
+# Fine-tune setup interactively (optional)
+clawdcursor doctor
 ```
 
 ### macOS
@@ -105,8 +112,11 @@ cd clawd-cursor && npm install && npm run setup
 # Make macOS scripts executable
 chmod +x scripts/mac/*.sh scripts/mac/*.jxa
 
-clawdcursor doctor
+# Just start — auto-detects available providers
 clawdcursor start
+
+# Or specify any provider
+clawdcursor start --base-url https://api.example.com/v1 --api-key KEY
 ```
 
 ### Linux
@@ -116,19 +126,28 @@ git clone https://github.com/AmrDab/clawd-cursor.git
 cd clawd-cursor && npm install && npm run setup
 
 # Linux: browser control via CDP only (no native desktop automation)
-clawdcursor doctor
+# Just start — auto-detects available providers
 clawdcursor start
+
+# Or specify any provider
+clawdcursor start --base-url https://api.example.com/v1 --api-key KEY
 ```
 
 > 📖 See [docs/MACOS-SETUP.md](docs/MACOS-SETUP.md) for the full macOS onboarding guide.
 
-The doctor will:
-1. Test your screen capture and accessibility bridge
-2. Scan all AI providers (Anthropic, OpenAI, Groq, Together, DeepSeek, Kimi, Ollama) and detect GPU/VRAM
-3. Test each model and show you what works with latency
-4. Let you pick your TEXT LLM and VISION LLM (or accept the recommended defaults)
-5. Show setup instructions for any unconfigured cloud providers
-6. Build your optimal pipeline and save it
+First run auto-configuration will:
+1. Scan for AI providers from OpenClaw config, environment variables, and CLI flags
+2. Quick-test discovered providers (5s timeout per provider)
+3. Build the optimal pipeline automatically
+4. Save config and start immediately
+
+The optional `doctor` command provides interactive configuration:
+1. Tests your screen capture and accessibility bridge
+2. Scans all AI providers (Anthropic, OpenAI, Groq, Together, DeepSeek, Kimi, Ollama) and detects GPU/VRAM  
+3. Tests each model and shows you what works with latency
+4. Lets you pick your TEXT LLM and VISION LLM (or accept the recommended defaults)
+5. Shows setup instructions for any unconfigured cloud providers
+6. Builds your optimal pipeline and saves it
 
 Send a task:
 ```bash

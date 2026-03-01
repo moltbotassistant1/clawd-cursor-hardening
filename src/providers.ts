@@ -90,13 +90,26 @@ export const PROVIDERS: Record<string, ProviderProfile> = {
     openaiCompat: true,
     computerUse: false,
   },
+  generic: {
+    name: 'OpenAI-Compatible',
+    baseUrl: '', // set from config
+    authHeader: (key) => ({ 'Authorization': `Bearer ${key}` }),
+    textModel: '', // set from config
+    visionModel: '', // set from config  
+    openaiCompat: true,
+    computerUse: false,
+  },
 };
 
 /**
  * Auto-detect provider from API key format or explicit provider name.
  */
 export function detectProvider(apiKey: string, explicitProvider?: string): string {
-  if (explicitProvider && PROVIDERS[explicitProvider]) return explicitProvider;
+  if (explicitProvider) {
+    // Accept ANY provider name — if it's in PROVIDERS use it, otherwise treat as generic
+    if (PROVIDERS[explicitProvider]) return explicitProvider;
+    return 'generic'; 
+  }
 
   if (!apiKey) return 'ollama'; // No key = local mode
   if (apiKey.startsWith('sk-ant-')) return 'anthropic';
@@ -433,6 +446,119 @@ export async function scanProviders(): Promise<ProviderScanResult[]> {
   }
 
   results.push(ollamaResult);
+
+  // ── Create dynamic provider entries for unknown OpenClaw providers ──────
+  if (resolvedApi.source === 'openclaw') {
+    try {
+      const os = await import('os');
+      const fs = await import('fs');
+      const path = await import('path');
+      const home = os.homedir();
+      const roots = [path.join(home, '.openclaw'), path.join(home, '.openclaw-dev')];
+      
+      for (const root of roots) {
+        const configPaths = [
+          path.join(root, 'openclaw.json'),
+          path.join(root, 'agents', 'main', 'openclaw.json'),
+        ];
+        
+        for (const configPath of configPaths) {
+          try {
+            if (!fs.existsSync(configPath)) continue;
+            const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+            const providers = cfg?.models?.providers || {};
+            
+            for (const [provName, provConfig] of Object.entries(providers)) {
+              const providerNameLower = provName.toLowerCase();
+              const pConfig = provConfig as any;
+              const baseUrl = pConfig?.baseUrl;
+              const models = pConfig?.models || {};
+              
+              // Skip providers we already handle
+              const knownProvider = Object.values(PROVIDERS).some(p => 
+                p.baseUrl === baseUrl || providerNameLower.includes(p.name.toLowerCase().split(' ')[0])
+              );
+              if (knownProvider) continue;
+              if (!baseUrl) continue;
+              
+              // Find API key for this provider
+              const authPaths = [
+                path.join(root, 'agents', 'main', 'agent', 'auth-profiles.json'),
+                path.join(root, 'agents', 'main', 'auth-profiles.json'),
+              ];
+              
+              let apiKey = '';
+              for (const authPath of authPaths) {
+                try {
+                  if (!fs.existsSync(authPath)) continue;
+                  const auth = JSON.parse(fs.readFileSync(authPath, 'utf-8'));
+                  const profiles = auth?.profiles || auth;
+                  if (!profiles || typeof profiles !== 'object') continue;
+                  
+                  for (const [profileKey, profileValue] of Object.entries(profiles)) {
+                    const profileProviderName = profileKey.split(':')[0].toLowerCase();
+                    if (profileProviderName === providerNameLower) {
+                      const val = profileValue as any;
+                      apiKey = val?.key || val?.apiKey || val?.api_key || '';
+                      break;
+                    }
+                  }
+                  if (apiKey) break;
+                } catch { /* skip */ }
+              }
+              
+              if (!apiKey) continue;
+              
+              // Extract model names from OpenClaw config
+              const textModels = Object.keys(models).filter(m => 
+                !m.toLowerCase().includes('vision') && 
+                !m.toLowerCase().includes('dall-e') &&
+                !m.toLowerCase().includes('tts')
+              );
+              const visionModels = Object.keys(models).filter(m => 
+                m.toLowerCase().includes('vision') || 
+                m.toLowerCase().includes('4o') ||
+                m.toLowerCase().includes('claude')
+              );
+              
+              const textModel = textModels[0] || Object.keys(models)[0] || '';
+              const visionModel = visionModels[0] || textModel;
+              
+              if (!textModel) continue;
+              
+              // Create dynamic provider entry
+              const dynamicProviderKey = providerNameLower.replace(/[^a-z0-9]/g, '');
+              
+              // Add to PROVIDERS map dynamically (but don't mutate the original)
+              const dynamicProvider: ProviderProfile = {
+                name: provName,
+                baseUrl: baseUrl,
+                authHeader: (key) => ({ 'Authorization': `Bearer ${key}` }),
+                textModel: textModel,
+                visionModel: visionModel,
+                openaiCompat: true, // Most providers are OpenAI-compatible except Anthropic
+                computerUse: false,
+              };
+              
+              // Don't add to PROVIDERS directly (immutable), but create scan result
+              if (!results.find(r => r.key === dynamicProviderKey)) {
+                results.push({
+                  key: dynamicProviderKey,
+                  name: provName,
+                  available: true,
+                  detail: `OpenClaw config (${maskKey(apiKey)})`,
+                  apiKey: apiKey,
+                });
+                
+                // Store the dynamic provider for later use
+                (PROVIDERS as any)[dynamicProviderKey] = dynamicProvider;
+              }
+            }
+          } catch { /* skip */ }
+        }
+      }
+    } catch { /* OpenClaw dynamic provider creation failed, continue */ }
+  }
 
   // Apply OpenClaw base URLs to custom providers (e.g., moonshot uses api.moonshot.cn, not openai.com)
   for (const result of results) {

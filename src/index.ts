@@ -77,12 +77,30 @@ program
   .option('--port <port>', 'API server port', '3847')
   .option('--provider <provider>', 'AI provider (auto-detected, or specify: anthropic|openai|ollama|kimi|groq|...)')
   .option('--model <model>', 'Vision model to use')
+  .option('--text-model <model>', 'Text/reasoning model for Layer 2')
+  .option('--vision-model <model>', 'Vision model for Layer 3')
+  .option('--base-url <url>', 'Custom API base URL (OpenAI-compatible)')
   .option('--api-key <key>', 'AI provider API key')
   .option('--debug', 'Save screenshots to debug/ folder (off by default)')
   .action(async (opts) => {
+    // Auto-setup on first run
+    const configPath = path.join(__dirname, '..', '.clawd-config.json');
+    if (!fs.existsSync(configPath)) {
+      console.log('🔍 First run — auto-detecting AI providers...\n');
+      const { quickSetup } = await import('./doctor');
+      const pipeline = await quickSetup();
+      if (pipeline) {
+        console.log('✅ Auto-configured! Run `clawdcursor doctor` to customize.\n');
+      } else {
+        console.log('⚠️  No AI providers found. Layer 1 (Action Router) will still work.');
+        console.log('   Run `clawdcursor doctor` to set up AI providers.\n');
+      }
+    }
+
     const resolvedApi = resolveApiConfig({
       apiKey: opts.apiKey,
       provider: opts.provider,
+      baseUrl: opts.baseUrl,
     });
 
     const config: ClawdConfig = {
@@ -94,13 +112,13 @@ program
       ai: {
         provider: resolvedApi.provider || opts.provider || DEFAULT_CONFIG.ai.provider,
         apiKey: resolvedApi.apiKey,
-        baseUrl: resolvedApi.baseUrl,
+        baseUrl: opts.baseUrl || resolvedApi.baseUrl,
         textBaseUrl: resolvedApi.textBaseUrl,
         textApiKey: resolvedApi.textApiKey,
         visionBaseUrl: resolvedApi.visionBaseUrl,
         visionApiKey: resolvedApi.visionApiKey,
-        model: resolvedApi.textModel || opts.model || DEFAULT_CONFIG.ai.model,
-        visionModel: resolvedApi.visionModel || opts.model || DEFAULT_CONFIG.ai.visionModel,
+        model: opts.textModel || resolvedApi.textModel || opts.model || DEFAULT_CONFIG.ai.model,
+        visionModel: opts.visionModel || resolvedApi.visionModel || opts.model || DEFAULT_CONFIG.ai.visionModel,
       },
       debug: opts.debug || false,
     };

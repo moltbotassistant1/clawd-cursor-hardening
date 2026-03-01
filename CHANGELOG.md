@@ -2,6 +2,19 @@
 
 All notable changes to Clawd Cursor will be documented in this file.
 
+## [0.6.2] - 2026-02-28 — Universal Provider Support, Auto-Config
+
+### Added
+- **Auto-config on first run** — `clawdcursor start` auto-detects and configures providers without needing `clawdcursor doctor` first. Doctor is now optional for fine-tuning.
+- **Universal provider support** — any OpenAI-compatible endpoint works. Not limited to 7 hardcoded providers. Use `--base-url` + `--api-key` for custom endpoints.
+- **CLI model selection** — `--text-model` and `--vision-model` flags on start command.
+- **Dynamic OpenClaw provider mapping** — reads ALL providers from OpenClaw config, not just known ones. NVIDIA, Fireworks, Mistral, etc. work automatically.
+
+### Changed
+- `clawdcursor start` now auto-runs setup if no config exists (non-interactive)
+- Provider detection accepts any provider name, falling back to OpenAI-compatible API
+- `detectProvider()` returns 'generic' for unknown providers instead of defaulting to 'openai'
+
 ## [0.6.1] - 2026-02-28 — Keyboard Shortcuts, Pipeline Fixes
 
 ### Added

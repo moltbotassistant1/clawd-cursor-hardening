@@ -42,6 +42,199 @@ interface DiagResult {
   latencyMs?: number;
 }
 
+/**
+ * Quick, non-interactive setup for first run auto-configuration.
+ * Tests discovered providers with short timeouts and builds the best pipeline.
+ * Returns null if no providers work.
+ */
+export async function quickSetup(): Promise<PipelineConfig | null> {
+  console.log('🔍 Scanning available AI providers...');
+
+  // 1. Scan providers (reuse existing logic)
+  const scanResults = await scanProviders();
+  const anyAvailable = scanResults.some(s => s.available);
+
+  if (!anyAvailable) {
+    console.log('⚠️  No AI providers detected. Layer 1 (Action Router) will still work.');
+    return null;
+  }
+
+  // 2. Quick test available providers (with shorter timeout for first run)
+  console.log('⚡ Quick-testing discovered models...');
+  const modelTests = await quickTestAllProviders(scanResults);
+
+  const workingText = modelTests.filter(t => t.role === 'text' && t.ok);
+  const workingVision = modelTests.filter(t => t.role === 'vision' && t.ok);
+
+  if (workingText.length === 0 && workingVision.length === 0) {
+    console.log('⚠️  No working models found. Layer 1 (Action Router) will still work.');
+    return null;
+  }
+
+  // 3. Build best pipeline automatically
+  const pipeline = buildMixedPipeline(scanResults, modelTests);
+
+  // 4. Save to .clawd-config.json
+  savePipelineConfig(pipeline, scanResults);
+
+  // 5. Return pipeline
+  return pipeline;
+}
+
+/**
+ * Quick version of testAllProviders with 5s timeout per provider for auto-setup.
+ */
+async function quickTestAllProviders(scanResults: ProviderScanResult[]): Promise<ModelTestResult[]> {
+  const promises: Promise<ModelTestResult>[] = [];
+
+  for (const scan of scanResults) {
+    if (!scan.available) continue;
+
+    const provider = PROVIDERS[scan.key];
+    if (!provider) continue;
+
+    // ── Text model test ──────────────────────────────────────────
+    if (scan.key === 'ollama') {
+      const ollamaTextModel = pickOllamaTextModel(scan.ollamaModels || []);
+      if (ollamaTextModel) {
+        promises.push(
+          quickTestModelAsync(provider, scan.apiKey, ollamaTextModel, 'text', scan.key),
+        );
+      }
+    } else {
+      promises.push(
+        quickTestModelAsync(provider, scan.apiKey, provider.textModel, 'text', scan.key),
+      );
+    }
+
+    // ── Vision model test ────────────────────────────────────────
+    if (scan.key === 'ollama') {
+      const ollamaVisionModels = scan.ollamaVisionModels || [];
+      if (ollamaVisionModels.length > 0) {
+        promises.push(
+          quickTestModelAsync(provider, scan.apiKey, ollamaVisionModels[0], 'vision', scan.key),
+        );
+      }
+    } else {
+      promises.push(
+        quickTestModelAsync(provider, scan.apiKey, provider.visionModel, 'vision', scan.key),
+      );
+    }
+  }
+
+  const settled = await Promise.allSettled(promises);
+  const testResults: ModelTestResult[] = [];
+
+  for (const result of settled) {
+    if (result.status === 'fulfilled') {
+      testResults.push(result.value);
+    }
+  }
+
+  return testResults;
+}
+
+/**
+ * Quick model test with 5s timeout for auto-setup.
+ */
+async function quickTestModelAsync(
+  provider: ProviderProfile,
+  apiKey: string,
+  model: string,
+  role: 'text' | 'vision',
+  providerKey: string,
+): Promise<ModelTestResult> {
+  const result = await quickTestModel(provider, apiKey, model, role === 'vision');
+  return {
+    providerKey,
+    model,
+    role,
+    ok: result.ok,
+    latencyMs: result.latencyMs,
+    error: result.error,
+  };
+}
+
+/**
+ * Quick model test with 5s timeout.
+ */
+async function quickTestModel(
+  provider: ProviderProfile,
+  apiKey: string,
+  model: string,
+  _isVision: boolean,
+): Promise<{ ok: boolean; latencyMs?: number; error?: string }> {
+  const start = performance.now();
+
+  try {
+    if (provider.openaiCompat) {
+      const response = await fetch(`${provider.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...provider.authHeader(apiKey),
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 5,
+          messages: [{ role: 'user', content: 'OK' }],
+        }),
+        signal: AbortSignal.timeout(5000), // 5s timeout for quick setup
+      });
+
+      const data = await response.json() as any;
+      if (data.error) {
+        const msg = typeof data.error === 'object' && data.error !== null
+          ? (data.error.message || JSON.stringify(data.error))
+          : String(data.error);
+        return { ok: false, error: msg };
+      }
+      const text = data.choices?.[0]?.message?.content || '';
+      if (!text) return { ok: false, error: 'Empty response' };
+
+      return { ok: true, latencyMs: Math.round(performance.now() - start) };
+    } else {
+      // Anthropic API
+      const response = await fetch(`${provider.baseUrl}/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...provider.authHeader(apiKey),
+          ...provider.extraHeaders,
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 5,
+          messages: [{ role: 'user', content: 'OK' }],
+        }),
+        signal: AbortSignal.timeout(5000), // 5s timeout for quick setup
+      });
+
+      const data = await response.json() as any;
+      if (data.type === 'error' && data.error) {
+        const err = data.error;
+        const msg = typeof err === 'object' && err !== null
+          ? (err.message || JSON.stringify(err))
+          : String(err);
+        return { ok: false, error: msg };
+      }
+      if (data.error) {
+        const msg = typeof data.error === 'object' && data.error !== null
+          ? (data.error.message || JSON.stringify(data.error))
+          : String(data.error);
+        return { ok: false, error: msg };
+      }
+
+      return { ok: true, latencyMs: Math.round(performance.now() - start) };
+    }
+  } catch (err: any) {
+    if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+      return { ok: false, error: 'Timeout (5s)' };
+    }
+    return { ok: false, error: err.message || String(err) };
+  }
+}
+
 export async function runDoctor(opts: {
   apiKey?: string;
   provider?: string;
