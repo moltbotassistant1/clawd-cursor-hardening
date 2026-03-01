@@ -309,6 +309,18 @@ function selectVisionProvider(providers: ProviderInfo[]): ProviderInfo | null {
   return null;
 }
 
+function isLikelyLocalProvider(provider: ProviderInfo | undefined): boolean {
+  const url = (provider?.baseUrl || '').toLowerCase();
+  return provider?.key === 'ollama' || url.includes('localhost') || url.includes('127.0.0.1') || url.includes('11434');
+}
+
+function selectProviderWithApiKey(providers: ProviderInfo[]): ProviderInfo | null {
+  for (const p of providers) {
+    if (p.apiKey) return p;
+  }
+  return null;
+}
+
 function selectTextProvider(providers: ProviderInfo[]): ProviderInfo | null {
   const withTextModel = providers.find(p => p.models.some(m => !m.input.includes('image') && !m.input.includes('vision')));
   if (withTextModel) return withTextModel;
@@ -321,13 +333,19 @@ function resolveFromOpenClawFiles(): ResolvedApiConfig | null {
   if (providerList.length === 0) return null;
 
   const configuredProvider = readConfiguredProvider();
-  const preferredProvider = configuredProvider ? providerMap[configuredProvider] : undefined;
+  const preferredProvider = configuredProvider ? providerMap[normalizeProviderKey(configuredProvider)] : undefined;
   const preferredCandidates = preferredProvider ? [preferredProvider] : providerList;
 
+  const preferredProviderWithKey = selectProviderWithApiKey(preferredCandidates);
+  const globalProviderWithKey = selectProviderWithApiKey(providerList);
   const visionProvider = selectVisionProvider(preferredCandidates) || selectVisionProvider(providerList);
   const textProvider = selectTextProvider(preferredCandidates) || selectTextProvider(providerList);
 
-  const selectedProvider = preferredProvider || visionProvider || textProvider;
+  const selectedProvider = preferredProviderWithKey
+    || preferredProvider
+    || visionProvider
+    || textProvider
+    || globalProviderWithKey;
   if (!selectedProvider) return null;
 
   const visionModel = visionProvider?.models.find(m => m.input.includes('image') || m.input.includes('vision'))?.id
@@ -335,16 +353,7 @@ function resolveFromOpenClawFiles(): ResolvedApiConfig | null {
   const textModel = textProvider?.models.find(m => !m.input.includes('image') && !m.input.includes('vision'))?.id
     || textProvider?.models[0]?.id;
 
-  const resolvedApiKey = selectedProvider.apiKey
-    || textProvider?.apiKey
-    || visionProvider?.apiKey
-    || providerList.find(p => !!p.apiKey)?.apiKey
-    || '';
-
-  const isLikelyLocalProvider = (provider: ProviderInfo | undefined): boolean => {
-    const url = (provider?.baseUrl || '').toLowerCase();
-    return provider?.key === 'ollama' || url.includes('localhost') || url.includes('127.0.0.1') || url.includes('11434');
-  };
+  const resolvedApiKey = selectedProvider.apiKey || textProvider?.apiKey || visionProvider?.apiKey || globalProviderWithKey?.apiKey || '';
 
   if (!resolvedApiKey && !isLikelyLocalProvider(selectedProvider)) {
     return null;
@@ -352,16 +361,19 @@ function resolveFromOpenClawFiles(): ResolvedApiConfig | null {
 
   const resolvedTextApiKey = textProvider?.apiKey || selectedProvider.apiKey || resolvedApiKey;
   const resolvedVisionApiKey = visionProvider?.apiKey || selectedProvider.apiKey || resolvedApiKey;
+  const resolvedBaseUrl = selectedProvider.baseUrl || visionProvider?.baseUrl || textProvider?.baseUrl;
+  const resolvedTextBaseUrl = textProvider?.baseUrl || selectedProvider.baseUrl || visionProvider?.baseUrl;
+  const resolvedVisionBaseUrl = visionProvider?.baseUrl || selectedProvider.baseUrl || textProvider?.baseUrl;
 
   return {
     apiKey: resolvedApiKey,
-    baseUrl: visionProvider?.baseUrl || selectedProvider.baseUrl || textProvider?.baseUrl,
+    baseUrl: resolvedBaseUrl,
     textModel,
     visionModel,
     textApiKey: resolvedTextApiKey,
-    textBaseUrl: textProvider?.baseUrl,
+    textBaseUrl: resolvedTextBaseUrl,
     visionApiKey: resolvedVisionApiKey,
-    visionBaseUrl: visionProvider?.baseUrl || selectedProvider.baseUrl,
+    visionBaseUrl: resolvedVisionBaseUrl,
     provider: normalizeProvider(selectedProvider.key) || inferProviderFromBaseUrl(selectedProvider.baseUrl),
     source: 'openclaw',
   };

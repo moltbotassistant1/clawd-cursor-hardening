@@ -59,10 +59,20 @@ describe.sequential('openclaw credential resolution', () => {
     const resolved = resolveApiConfig();
     expect(resolved.source).toBe('openclaw');
     expect(resolved.apiKey).toBe('moonshot-real-key');
+    expect(resolved.baseUrl).toBe('https://api.moonshot.ai/v1');
     expect(resolved.visionApiKey).toBe('moonshot-real-key');
+    expect(resolved.visionBaseUrl).toBe('https://api.moonshot.ai/v1');
   });
 
   it('prefers doctor-configured provider from .clawd-config.json', () => {
+    writeJson(path.join(tempHome, '.openclaw', 'agents', 'main', 'agent', 'auth-profiles.json'), {
+      anthropic: {
+        apiKey: 'anthropic-auth-profile-key',
+        baseUrl: 'https://api.anthropic.com/v1',
+        models: [{ id: 'claude-sonnet-4-5', input: ['text', 'image'] }],
+      },
+    });
+
     writeJson(path.join(tempHome, '.openclaw', 'openclaw.json'), {
       env: {
         MOONSHOT_API_KEY: 'moonshot-real-key',
@@ -90,8 +100,41 @@ describe.sequential('openclaw credential resolution', () => {
     const resolved = resolveApiConfig();
     expect(resolved.source).toBe('openclaw');
     expect(resolved.provider).toBe('anthropic');
-    expect(resolved.apiKey).toBe('anthropic-live-key');
-    expect(resolved.textApiKey).toBe('anthropic-live-key');
+    expect(resolved.apiKey).toBe('anthropic-auth-profile-key');
+    expect(resolved.baseUrl).toBe('https://api.anthropic.com/v1');
+    expect(resolved.textApiKey).toBe('anthropic-auth-profile-key');
+    expect(resolved.textBaseUrl).toBe('https://api.anthropic.com/v1');
+  });
+
+  it('prefers vision-capable provider from auth-profiles when no doctor config exists', () => {
+    writeJson(path.join(tempHome, '.openclaw', 'agents', 'main', 'agent', 'auth-profiles.json'), {
+      anthropic: {
+        apiKey: 'anthropic-auth-profile-key',
+        baseUrl: 'https://api.anthropic.com/v1',
+        models: [{ id: 'claude-sonnet-4-5', input: ['text', 'image'] }],
+      },
+    });
+
+    writeJson(path.join(tempHome, '.openclaw', 'openclaw.json'), {
+      env: {
+        MOONSHOT_API_KEY: 'moonshot-real-key',
+      },
+      models: {
+        providers: {
+          moonshot: {
+            apiKey: '${MOONSHOT_API_KEY}',
+            baseUrl: 'https://api.moonshot.ai/v1',
+            models: [{ id: 'moonshot-v1-text', input: ['text'] }],
+          },
+        },
+      },
+    });
+
+    const resolved = resolveApiConfig();
+    expect(resolved.source).toBe('openclaw');
+    expect(resolved.provider).toBe('anthropic');
+    expect(resolved.apiKey).toBe('anthropic-auth-profile-key');
+    expect(resolved.baseUrl).toBe('https://api.anthropic.com/v1');
   });
 
   it('falls back to env keys when openclaw provider key is unresolved', () => {
@@ -126,5 +169,11 @@ describe.sequential('openclaw credential resolution', () => {
     expect(resolved.apiKey).toBe('custom-provider-key');
     expect(resolved.textApiKey).toBe('custom-provider-key');
     expect(resolved.visionApiKey).toBe('custom-provider-key');
+  });
+
+  it('returns local empty config when nothing is configured (fresh install)', () => {
+    const resolved = resolveApiConfig();
+    expect(resolved.source).toBe('local');
+    expect(resolved.apiKey).toBe('');
   });
 });
