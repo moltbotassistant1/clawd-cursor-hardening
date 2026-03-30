@@ -187,6 +187,22 @@ export function createServer(
     console.log(`🔒 Auth enabled — token: ${token.substring(0, 8)}...`);
   }
 
+  // CSRF protection: reject non-localhost origins on state-changing requests
+  app.use((req, res, next) => {
+    if (req.method === "GET") return next();
+    const origin = req.headers.origin;
+    if (
+      origin &&
+      !origin.includes("localhost") &&
+      !origin.includes("127.0.0.1")
+    ) {
+      return res
+        .status(403)
+        .json({ error: "Cross-origin requests not allowed" });
+    }
+    next();
+  });
+
   // Mount the web dashboard at GET /
   mountDashboard(app);
 
