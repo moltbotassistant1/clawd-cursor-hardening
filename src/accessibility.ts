@@ -1,46 +1,46 @@
 /**
  * Accessibility Bridge — calls platform-specific scripts to query
  * the native accessibility tree. No vision needed for most actions.
- * 
+ *
  * Windows: Node.js → spawn powershell → .NET UI Automation → JSON
  * macOS:   Node.js → spawn osascript → JXA (Accessibility API) → JSON
- * 
+ *
  * v2: Added window management helpers (focusWindow, launchApp, getActiveWindow)
  * v2.1: Fixed hardcoded process IDs, added PowerShell check, proper foreground window detection
  * v3: Cross-platform support (Windows + macOS)
  */
 
-import { execFile } from 'child_process';
-import * as os from 'os';
-import * as path from 'path';
-import { promisify } from 'util';
+import { execFile } from "child_process";
+import * as os from "os";
+import * as path from "path";
+import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
 const PLATFORM = os.platform(); // 'win32' | 'darwin' | 'linux'
-const SCRIPTS_DIR = path.join(__dirname, '..', 'scripts');
-const MAC_SCRIPTS_DIR = path.join(SCRIPTS_DIR, 'mac');
+const SCRIPTS_DIR = path.join(__dirname, "..", "scripts");
+const MAC_SCRIPTS_DIR = path.join(SCRIPTS_DIR, "mac");
 // macOS JXA scripts enumerate System Events which can be slow on some versions.
 // 30s gives enough headroom; scripts are cached after first call so this only
 // applies to the first invocation per session.
-const SCRIPT_TIMEOUT = PLATFORM === 'darwin' ? 30000 : 10000;
+const SCRIPT_TIMEOUT = PLATFORM === "darwin" ? 30000 : 10000;
 
 /** Platform script file mapping: Windows (.ps1) → macOS (.jxa) */
 const SCRIPT_MAP: Record<string, Record<string, string>> = {
   win32: {
-    'get-windows': 'get-windows.ps1',
-    'find-element': 'find-element.ps1',
-    'invoke-element': 'invoke-element.ps1',
-    'focus-window': 'focus-window.ps1',
-    'get-foreground-window': 'get-foreground-window.ps1',
-    'get-screen-context': 'get-screen-context.ps1',
+    "get-windows": "get-windows.ps1",
+    "find-element": "find-element.ps1",
+    "invoke-element": "invoke-element.ps1",
+    "focus-window": "focus-window.ps1",
+    "get-foreground-window": "get-foreground-window.ps1",
+    "get-screen-context": "get-screen-context.ps1",
   },
   darwin: {
-    'get-windows': 'get-windows.jxa',
-    'get-screen-context': 'get-screen-context.jxa',
-    'find-element': 'find-element.jxa',
-    'invoke-element': 'invoke-element.jxa',
-    'focus-window': 'focus-window.jxa',
-    'get-foreground-window': 'get-foreground-window.jxa',
+    "get-windows": "get-windows.jxa",
+    "get-screen-context": "get-screen-context.jxa",
+    "find-element": "find-element.jxa",
+    "invoke-element": "invoke-element.jxa",
+    "focus-window": "focus-window.jxa",
+    "get-foreground-window": "get-foreground-window.jxa",
   },
 };
 
@@ -83,12 +83,25 @@ export class AccessibilityBridge {
   private explorerProcessId: number | null = null; // Cached Explorer PID for taskbar detection
 
   /** Cached taskbar buttons — rarely change, queried once */
-  private taskbarCache: { buttons: UIElement[]; timestamp: number } | null = null;
+  private taskbarCache: { buttons: UIElement[]; timestamp: number } | null =
+    null;
   private readonly TASKBAR_CACHE_TTL = 30000; // 30s — taskbar barely changes
 
   // ── Perf Opt #3: Screen context cache (2s TTL — UI rarely changes mid-LLM-call) ──
   private screenContextCache: ScreenContextCache | null = null;
   private readonly SCREEN_CONTEXT_CACHE_TTL = 2000;
+
+  constructor() {
+    if (process.platform === "linux") {
+      console.warn("⚠ Linux accessibility bridge is not implemented.");
+      console.warn(
+        "  Layers 1.5 (SmartInteraction) and 2 (A11yReasoner) will be disabled.",
+      );
+      console.warn(
+        "  All tasks will use Layer 3 (vision LLM) — this is slower and more expensive.",
+      );
+    }
+  }
 
   /**
    * Check if the platform's script shell is available.
@@ -96,41 +109,58 @@ export class AccessibilityBridge {
    */
   async isShellAvailable(): Promise<boolean> {
     if (shellAvailable !== null) return shellAvailable;
-    
+
     try {
-      if (PLATFORM === 'win32') {
-        await execFileAsync('powershell.exe', ['-Command', 'exit 0'], { timeout: 5000 });
-      } else if (PLATFORM === 'darwin') {
+      if (PLATFORM === "win32") {
+        await execFileAsync("powershell.exe", ["-Command", "exit 0"], {
+          timeout: 5000,
+        });
+      } else if (PLATFORM === "darwin") {
         // Probe System Events directly — a bare osascript -e '""' succeeds even without
         // Accessibility permissions, giving a false positive. Touching processes.length
         // forces macOS to check the permission and fail fast with a clear error if not granted.
         await execFileAsync(
-          'osascript',
-          ['-l', 'JavaScript', '-e', 'Application("System Events").processes.length; true'],
+          "osascript",
+          [
+            "-l",
+            "JavaScript",
+            "-e",
+            'Application("System Events").processes.length; true',
+          ],
           { timeout: 5000 },
         );
       } else {
-        console.error(`❌ Unsupported platform: ${PLATFORM}. Accessibility requires Windows or macOS.`);
+        console.error(
+          `❌ Unsupported platform: ${PLATFORM}. Accessibility requires Windows or macOS.`,
+        );
         shellAvailable = false;
         return false;
       }
       shellAvailable = true;
-      console.log(`✅ Accessibility bridge ready (${PLATFORM === 'win32' ? 'PowerShell' : 'osascript'})`);
+      console.log(
+        `✅ Accessibility bridge ready (${PLATFORM === "win32" ? "PowerShell" : "osascript"})`,
+      );
     } catch (err: any) {
       shellAvailable = false;
-      if (PLATFORM === 'darwin') {
-        const isAuthError = err.stderr?.includes('not authorized') || err.message?.includes('not authorized');
+      if (PLATFORM === "darwin") {
+        const isAuthError =
+          err.stderr?.includes("not authorized") ||
+          err.message?.includes("not authorized");
         if (isAuthError) {
           console.error(
             `❌ Accessibility: not authorized to control System Events.\n` +
-            `   → System Settings → Privacy & Security → Accessibility\n` +
-            `   → Add your terminal app (Terminal, iTerm2, wezterm, etc.) or Node.js and try again.`
+              `   → System Settings → Privacy & Security → Accessibility\n` +
+              `   → Add your terminal app (Terminal, iTerm2, wezterm, etc.) or Node.js and try again.`,
           );
         } else {
-          console.error(`❌ osascript not available. Accessibility bridge will not function.`);
+          console.error(
+            `❌ osascript not available. Accessibility bridge will not function.`,
+          );
         }
       } else {
-        console.error(`❌ PowerShell not available. Accessibility bridge will not function.`);
+        console.error(
+          `❌ PowerShell not available. Accessibility bridge will not function.`,
+        );
       }
     }
     return shellAvailable;
@@ -142,11 +172,13 @@ export class AccessibilityBridge {
    */
   private async getExplorerProcessId(): Promise<number | null> {
     if (this.explorerProcessId !== null) return this.explorerProcessId;
-    
-    const targetProcess = PLATFORM === 'darwin' ? 'finder' : 'explorer';
+
+    const targetProcess = PLATFORM === "darwin" ? "finder" : "explorer";
     try {
       const windows = await this.getWindows(true);
-      const match = windows.find(w => w.processName.toLowerCase() === targetProcess);
+      const match = windows.find(
+        (w) => w.processName.toLowerCase() === targetProcess,
+      );
       if (match) {
         this.explorerProcessId = match.processId;
         return match.processId;
@@ -165,10 +197,12 @@ export class AccessibilityBridge {
     if (shellAvailable === null) {
       const available = await this.isShellAvailable();
       if (!available) {
-        throw new Error(`Accessibility shell not available on ${PLATFORM}. Features disabled.`);
+        throw new Error(
+          `Accessibility shell not available on ${PLATFORM}. Features disabled.`,
+        );
       }
     }
-    
+
     if (
       !forceRefresh &&
       this.windowCache &&
@@ -177,7 +211,7 @@ export class AccessibilityBridge {
       return this.windowCache.windows;
     }
 
-    const windows = await this.runScript('get-windows.ps1');
+    const windows = await this.runScript("get-windows.ps1");
     this.windowCache = { windows, timestamp: Date.now() };
     return windows;
   }
@@ -200,11 +234,11 @@ export class AccessibilityBridge {
     processId?: number;
   }): Promise<UIElement[]> {
     const args: string[] = [];
-    if (opts.name) args.push('-Name', opts.name);
-    if (opts.automationId) args.push('-AutomationId', opts.automationId);
-    if (opts.controlType) args.push('-ControlType', opts.controlType);
-    if (opts.processId) args.push('-ProcessId', String(opts.processId));
-    return this.runScript('find-element.ps1', args);
+    if (opts.name) args.push("-Name", opts.name);
+    if (opts.automationId) args.push("-AutomationId", opts.automationId);
+    if (opts.controlType) args.push("-ControlType", opts.controlType);
+    if (opts.processId) args.push("-ProcessId", String(opts.processId));
+    return this.runScript("find-element.ps1", args);
   }
 
   /**
@@ -216,12 +250,28 @@ export class AccessibilityBridge {
     name?: string;
     automationId?: string;
     controlType?: string;
-    action: 'click' | 'set-value' | 'get-value' | 'focus' | 'expand' | 'collapse';
+    action:
+      | "click"
+      | "set-value"
+      | "get-value"
+      | "focus"
+      | "expand"
+      | "collapse";
     value?: string;
     processId?: number;
-  }): Promise<{ success: boolean; value?: string; error?: string; clickPoint?: { x: number; y: number } }> {
+  }): Promise<{
+    success: boolean;
+    value?: string;
+    error?: string;
+    clickPoint?: { x: number; y: number };
+  }> {
     let processId = opts.processId;
-    let elementBounds: { x: number; y: number; width: number; height: number } | null = null;
+    let elementBounds: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    } | null = null;
 
     // Auto-discover processId if not provided
     if (!processId) {
@@ -236,35 +286,53 @@ export class AccessibilityBridge {
       }
       const elements = await this.findElement(searchOpts);
       if (!elements || elements.length === 0) {
-        return { success: false, error: `Element not found: ${opts.name || opts.automationId}` };
+        return {
+          success: false,
+          error: `Element not found: ${opts.name || opts.automationId}`,
+        };
       }
       const element = elements[0];
       processId = (element as any).processId;
       elementBounds = element.bounds;
-      
+
       // Fallback to coordinate click if we have bounds but no processId
-      if (!processId && elementBounds && elementBounds.width > 0 && opts.action === 'click') {
+      if (
+        !processId &&
+        elementBounds &&
+        elementBounds.width > 0 &&
+        opts.action === "click"
+      ) {
         const centerX = elementBounds.x + Math.floor(elementBounds.width / 2);
         const centerY = elementBounds.y + Math.floor(elementBounds.height / 2);
-        console.log(`   ♿ No processId for "${opts.name}", falling back to coordinate click at (${centerX}, ${centerY})`);
-        return { 
-          success: true, 
+        console.log(
+          `   ♿ No processId for "${opts.name}", falling back to coordinate click at (${centerX}, ${centerY})`,
+        );
+        return {
+          success: true,
           clickPoint: { x: centerX, y: centerY },
-          error: `Coordinate click fallback — caller should execute mouse click at (${centerX}, ${centerY})`
+          error: `Coordinate click fallback — caller should execute mouse click at (${centerX}, ${centerY})`,
         };
       }
-      
+
       if (!processId) {
-        return { success: false, error: `No processId for element: ${opts.name || opts.automationId}` };
+        return {
+          success: false,
+          error: `No processId for element: ${opts.name || opts.automationId}`,
+        };
       }
     }
 
-    const args: string[] = ['-Action', opts.action, '-ProcessId', String(processId)];
-    if (opts.name) args.push('-Name', opts.name);
-    if (opts.automationId) args.push('-AutomationId', opts.automationId);
-    if (opts.controlType) args.push('-ControlType', opts.controlType);
-    if (opts.value) args.push('-Value', opts.value);
-    return this.runScript('invoke-element.ps1', args);
+    const args: string[] = [
+      "-Action",
+      opts.action,
+      "-ProcessId",
+      String(processId),
+    ];
+    if (opts.name) args.push("-Name", opts.name);
+    if (opts.automationId) args.push("-AutomationId", opts.automationId);
+    if (opts.controlType) args.push("-ControlType", opts.controlType);
+    if (opts.value) args.push("-Value", opts.value);
+    return this.runScript("invoke-element.ps1", args);
   }
 
   // ─── Window Management Helpers (deterministic, no LLM) ────────────
@@ -273,14 +341,22 @@ export class AccessibilityBridge {
    * Focus (bring to front) a window by title substring or processId.
    * Reliable — uses UIA WindowPattern + Win32 SetForegroundWindow fallback.
    */
-  async focusWindow(title?: string, processId?: number): Promise<{ success: boolean; title?: string; processId?: number; error?: string }> {
+  async focusWindow(
+    title?: string,
+    processId?: number,
+  ): Promise<{
+    success: boolean;
+    title?: string;
+    processId?: number;
+    error?: string;
+  }> {
     const args: string[] = [];
-    if (title) args.push('-Title', title);
-    if (processId) args.push('-ProcessId', String(processId));
-    args.push('-Restore');  // Always restore from minimized
+    if (title) args.push("-Title", title);
+    if (processId) args.push("-ProcessId", String(processId));
+    args.push("-Restore"); // Always restore from minimized
 
     try {
-      const result = await this.runScript('focus-window.ps1', args);
+      const result = await this.runScript("focus-window.ps1", args);
       this.invalidateCache(); // Window state changed
       return result;
     } catch (err) {
@@ -295,15 +371,15 @@ export class AccessibilityBridge {
   async getActiveWindow(): Promise<WindowInfo | null> {
     try {
       // Use Win32 API to get actual foreground window
-      const fgResult = await this.runScript('get-foreground-window.ps1');
+      const fgResult = await this.runScript("get-foreground-window.ps1");
       if (!fgResult.success) return null;
 
       // Get full window list to find matching window with full info
       const windows = await this.getWindows(true);
-      const match = windows.find(w => w.processId === fgResult.processId);
-      
+      const match = windows.find((w) => w.processId === fgResult.processId);
+
       if (match) return match;
-      
+
       // Window might be new — construct minimal info from foreground result
       return {
         handle: fgResult.handle,
@@ -317,7 +393,7 @@ export class AccessibilityBridge {
       // Fallback: return first non-minimized window (better than nothing)
       try {
         const windows = await this.getWindows(true);
-        return windows.find(w => !w.isMinimized) || null;
+        return windows.find((w) => !w.isMinimized) || null;
       } catch {
         return null;
       }
@@ -332,15 +408,15 @@ export class AccessibilityBridge {
     const windows = await this.getWindows();
 
     // Exact process name match
-    let match = windows.find(w => w.processName.toLowerCase() === lower);
+    let match = windows.find((w) => w.processName.toLowerCase() === lower);
     if (match) return match;
 
     // Title contains
-    match = windows.find(w => w.title.toLowerCase().includes(lower));
+    match = windows.find((w) => w.title.toLowerCase().includes(lower));
     if (match) return match;
 
     // Process name contains
-    match = windows.find(w => w.processName.toLowerCase().includes(lower));
+    match = windows.find((w) => w.processName.toLowerCase().includes(lower));
     if (match) return match;
 
     return null;
@@ -355,7 +431,8 @@ export class AccessibilityBridge {
     // ── Perf Opt #3: Return cached context if fresh ──
     if (
       this.screenContextCache &&
-      Date.now() - this.screenContextCache.timestamp < this.SCREEN_CONTEXT_CACHE_TTL
+      Date.now() - this.screenContextCache.timestamp <
+        this.SCREEN_CONTEXT_CACHE_TTL
     ) {
       return this.screenContextCache.context;
     }
@@ -363,64 +440,92 @@ export class AccessibilityBridge {
     try {
       // Use combined script for single PowerShell spawn
       const args: string[] = [];
-      if (focusedProcessId) args.push('-FocusedProcessId', String(focusedProcessId));
-      args.push('-MaxDepth', '2');
+      if (focusedProcessId)
+        args.push("-FocusedProcessId", String(focusedProcessId));
+      args.push("-MaxDepth", "2");
 
-      let context = '';
+      let context = "";
 
       try {
-        const combined = await this.runScript('get-screen-context.ps1', args);
+        const combined = await this.runScript("get-screen-context.ps1", args);
 
         // Format windows
         if (combined.windows && Array.isArray(combined.windows)) {
           context += `WINDOWS:\n`;
           for (const w of combined.windows) {
-            context += `  ${w.isMinimized ? '🔽' : '🟢'} [${w.processName}] "${w.title}" pid:${w.processId}`;
-            if (!w.isMinimized) context += ` at (${w.bounds.x},${w.bounds.y}) ${w.bounds.width}x${w.bounds.height}`;
+            context += `  ${w.isMinimized ? "🔽" : "🟢"} [${w.processName}] "${w.title}" pid:${w.processId}`;
+            if (!w.isMinimized)
+              context += ` at (${w.bounds.x},${w.bounds.y}) ${w.bounds.width}x${w.bounds.height}`;
             context += `\n`;
           }
           // Update window cache from combined result
-          this.windowCache = { windows: combined.windows, timestamp: Date.now() };
+          this.windowCache = {
+            windows: combined.windows,
+            timestamp: Date.now(),
+          };
         }
 
         // Format UI tree (already filtered to interactive elements by the script)
         if (combined.uiTree) {
           context += `\nFOCUSED WINDOW UI TREE:\n`;
-          context += this.formatTree(Array.isArray(combined.uiTree) ? combined.uiTree : [combined.uiTree], '  ');
+          context += this.formatTree(
+            Array.isArray(combined.uiTree)
+              ? combined.uiTree
+              : [combined.uiTree],
+            "  ",
+          );
         }
       } catch {
         // Fallback to separate calls if combined script fails
         const windows = await this.getWindows();
         context += `WINDOWS:\n`;
         for (const w of windows) {
-          context += `  ${w.isMinimized ? '🔽' : '🟢'} [${w.processName}] "${w.title}" pid:${w.processId}`;
-          if (!w.isMinimized) context += ` at (${w.bounds.x},${w.bounds.y}) ${w.bounds.width}x${w.bounds.height}`;
+          context += `  ${w.isMinimized ? "🔽" : "🟢"} [${w.processName}] "${w.title}" pid:${w.processId}`;
+          if (!w.isMinimized)
+            context += ` at (${w.bounds.x},${w.bounds.y}) ${w.bounds.width}x${w.bounds.height}`;
           context += `\n`;
         }
 
         if (focusedProcessId) {
           try {
-            const args = ['-FocusedProcessId', String(focusedProcessId), '-MaxDepth', '2'];
-            const result = await this.runScript('get-screen-context.ps1', args);
+            const args = [
+              "-FocusedProcessId",
+              String(focusedProcessId),
+              "-MaxDepth",
+              "2",
+            ];
+            const result = await this.runScript("get-screen-context.ps1", args);
             const tree = result?.uiTree ? [result.uiTree] : [];
             context += `\nFOCUSED WINDOW UI TREE (pid:${focusedProcessId}):\n`;
-            context += this.formatTree(Array.isArray(tree) ? tree : [tree], '  ');
-          } catch { /* tree query failed, skip */ }
+            context += this.formatTree(
+              Array.isArray(tree) ? tree : [tree],
+              "  ",
+            );
+          } catch {
+            /* tree query failed, skip */
+          }
         }
       }
 
       // Include cached taskbar buttons (refreshed every 30s)
       try {
         let tbButtons: UIElement[] = [];
-        if (this.taskbarCache && Date.now() - this.taskbarCache.timestamp < this.TASKBAR_CACHE_TTL) {
+        if (
+          this.taskbarCache &&
+          Date.now() - this.taskbarCache.timestamp < this.TASKBAR_CACHE_TTL
+        ) {
           tbButtons = this.taskbarCache.buttons;
         } else {
           const explorerPid = await this.getExplorerProcessId();
           if (explorerPid) {
-            const taskbarButtons = await this.findElement({ controlType: 'Button' });
-            tbButtons = taskbarButtons.filter((b: any) =>
-              b.processId === explorerPid && 
-              (b.className?.includes('Taskbar') || b.className?.includes('MSTaskList'))
+            const taskbarButtons = await this.findElement({
+              controlType: "Button",
+            });
+            tbButtons = taskbarButtons.filter(
+              (b: any) =>
+                b.processId === explorerPid &&
+                (b.className?.includes("Taskbar") ||
+                  b.className?.includes("MSTaskList")),
             );
             this.taskbarCache = { buttons: tbButtons, timestamp: Date.now() };
           }
@@ -431,7 +536,9 @@ export class AccessibilityBridge {
             context += `  📌 "${b.name}" at (${b.bounds.x},${b.bounds.y})\n`;
           }
         }
-      } catch { /* taskbar query failed, skip */ }
+      } catch {
+        /* taskbar query failed, skip */
+      }
 
       // Cache the result
       this.screenContextCache = { context, timestamp: Date.now() };
@@ -443,27 +550,40 @@ export class AccessibilityBridge {
 
   /** Interactive control types worth sending to the LLM */
   private static readonly INTERACTIVE_TYPES = new Set([
-    'ControlType.Button', 'ControlType.Edit', 'ControlType.ComboBox',
-    'ControlType.CheckBox', 'ControlType.RadioButton', 'ControlType.Hyperlink',
-    'ControlType.MenuItem', 'ControlType.Menu', 'ControlType.Tab',
-    'ControlType.TabItem', 'ControlType.ListItem', 'ControlType.TreeItem',
-    'ControlType.Slider', 'ControlType.ScrollBar', 'ControlType.ToolBar',
-    'ControlType.Document', 'ControlType.DataItem',
+    "ControlType.Button",
+    "ControlType.Edit",
+    "ControlType.ComboBox",
+    "ControlType.CheckBox",
+    "ControlType.RadioButton",
+    "ControlType.Hyperlink",
+    "ControlType.MenuItem",
+    "ControlType.Menu",
+    "ControlType.Tab",
+    "ControlType.TabItem",
+    "ControlType.ListItem",
+    "ControlType.TreeItem",
+    "ControlType.Slider",
+    "ControlType.ScrollBar",
+    "ControlType.ToolBar",
+    "ControlType.Document",
+    "ControlType.DataItem",
   ]);
 
   /** Max chars for accessibility context sent to LLM */
   private static readonly MAX_CONTEXT_CHARS = 3000;
 
   private formatTree(elements: UIElement[], indent: string): string {
-    let result = '';
+    let result = "";
     for (const el of elements) {
       // Only include interactive elements or those with useful names
-      const isInteractive = AccessibilityBridge.INTERACTIVE_TYPES.has(el.controlType);
+      const isInteractive = AccessibilityBridge.INTERACTIVE_TYPES.has(
+        el.controlType,
+      );
       const hasName = !!(el.name && el.name.trim());
 
       if (isInteractive || hasName) {
-        const name = el.name ? `"${el.name}"` : '';
-        const id = el.automationId ? `id:${el.automationId}` : '';
+        const name = el.name ? `"${el.name}"` : "";
+        const id = el.automationId ? `id:${el.automationId}` : "";
         const bounds = `@${el.bounds.x},${el.bounds.y}`;
         result += `${indent}[${el.controlType}] ${name} ${id} ${bounds}\n`;
 
@@ -475,8 +595,9 @@ export class AccessibilityBridge {
       }
 
       if (el.children) {
-        result += this.formatTree(el.children, indent + '  ');
-        if (result.length > AccessibilityBridge.MAX_CONTEXT_CHARS) return result;
+        result += this.formatTree(el.children, indent + "  ");
+        if (result.length > AccessibilityBridge.MAX_CONTEXT_CHARS)
+          return result;
       }
     }
     return result;
@@ -493,53 +614,67 @@ export class AccessibilityBridge {
       let commandArgs: string[];
 
       // Resolve script name — accept both logical names and direct filenames
-      const logicalName = scriptName.replace(/\.(ps1|jxa)$/, '');
-      const platformScripts = SCRIPT_MAP[PLATFORM] || SCRIPT_MAP['win32'];
+      const logicalName = scriptName.replace(/\.(ps1|jxa)$/, "");
+      const platformScripts = SCRIPT_MAP[PLATFORM] || SCRIPT_MAP["win32"];
       const resolvedScript = platformScripts[logicalName] || scriptName;
 
-      if (PLATFORM === 'darwin') {
+      if (PLATFORM === "darwin") {
         const scriptPath = path.join(MAC_SCRIPTS_DIR, resolvedScript);
-        command = 'osascript';
-        commandArgs = ['-l', 'JavaScript', scriptPath, ...args];
+        command = "osascript";
+        commandArgs = ["-l", "JavaScript", scriptPath, ...args];
       } else {
         // Windows (default)
         const scriptPath = path.join(SCRIPTS_DIR, resolvedScript);
-        command = 'powershell.exe';
+        command = "powershell.exe";
         commandArgs = [
-          '-NoProfile',
-          '-NonInteractive',
-          '-ExecutionPolicy', 'Bypass',
-          '-File', scriptPath,
+          "-NoProfile",
+          "-NonInteractive",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          scriptPath,
           ...args,
         ];
       }
 
-      execFile(command, commandArgs, {
-        timeout: SCRIPT_TIMEOUT,
-        maxBuffer: 1024 * 1024 * 5, // 5MB buffer
-      }, (error, stdout, stderr) => {
-        if (error) {
-          // Include stderr so the real reason (e.g. "not authorized to send Apple events") is visible
-          const stderrDetail = typeof stderr === 'string' && stderr.trim() ? ` — ${stderr.trim()}` : '';
-          const fullMessage = error.message + stderrDetail;
-          console.error(`Accessibility script error (${resolvedScript}): ${fullMessage}`);
-          reject(new Error(fullMessage));
-          return;
-        }
-
-        try {
-          const result = JSON.parse(stdout.trim());
-          if (result.error) {
-            reject(new Error(result.error));
-          } else {
-            resolve(result);
+      execFile(
+        command,
+        commandArgs,
+        {
+          timeout: SCRIPT_TIMEOUT,
+          maxBuffer: 1024 * 1024 * 5, // 5MB buffer
+        },
+        (error, stdout, stderr) => {
+          if (error) {
+            // Include stderr so the real reason (e.g. "not authorized to send Apple events") is visible
+            const stderrDetail =
+              typeof stderr === "string" && stderr.trim()
+                ? ` — ${stderr.trim()}`
+                : "";
+            const fullMessage = error.message + stderrDetail;
+            console.error(
+              `Accessibility script error (${resolvedScript}): ${fullMessage}`,
+            );
+            reject(new Error(fullMessage));
+            return;
           }
-        } catch (parseErr) {
-          const stderrMsg = stderr ? stderr.trim().substring(0, 300) : '';
-          console.error(`Failed to parse ${resolvedScript} output: stdout=${stdout.substring(0, 200)}${stderrMsg ? ' stderr=' + stderrMsg : ''}`);
-          reject(parseErr);
-        }
-      });
+
+          try {
+            const result = JSON.parse(stdout.trim());
+            if (result.error) {
+              reject(new Error(result.error));
+            } else {
+              resolve(result);
+            }
+          } catch (parseErr) {
+            const stderrMsg = stderr ? stderr.trim().substring(0, 300) : "";
+            console.error(
+              `Failed to parse ${resolvedScript} output: stdout=${stdout.substring(0, 200)}${stderrMsg ? " stderr=" + stderrMsg : ""}`,
+            );
+            reject(parseErr);
+          }
+        },
+      );
     });
   }
 }
