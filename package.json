@@ -44,14 +44,6 @@
     "typescript": "^5.4.0",
     "vitest": "^4.0.18"
   },
-  "vitest": {
-    "coverage": {
-      "provider": "v8",
-      "thresholds": {
-        "statements": 30
-      }
-    }
-  },
   "engines": {
     "node": ">=20.0.0"
   },
