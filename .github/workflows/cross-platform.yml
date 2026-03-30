@@ -39,4 +39,4 @@ jobs:
         run: npm run build
 
       - name: Run test suite
-        run: npx vitest run --coverage --coverage.reporter=text
+        run: npx vitest run --coverage
