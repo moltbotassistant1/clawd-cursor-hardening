@@ -1,6 +1,6 @@
 /**
  * HTTP Server — REST API for controlling the agent.
- * 
+ *
  * Endpoints:
  *   GET  /           — Web dashboard
  *   POST /task       — submit a new task
@@ -16,51 +16,72 @@
  *   DELETE /favorites — remove a command from favorites
  */
 
-import express from 'express';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join } from 'path';
-import { z } from 'zod';
-import type { ClawdConfig } from './types';
-import { Agent } from './agent';
-import { mountDashboard } from './dashboard';
-import { VERSION } from './version';
+import express from "express";
+import { readFileSync, writeFileSync, existsSync } from "fs";
+import { join } from "path";
+import { z } from "zod";
+import type { ClawdConfig } from "./types";
+import { Agent } from "./agent";
+import { mountDashboard } from "./dashboard";
+import { VERSION } from "./version";
 
 // Favorites persistence
-const FAVORITES_PATH = join(process.cwd(), '.clawd-favorites.json');
+const FAVORITES_PATH = join(process.cwd(), ".clawd-favorites.json");
 
 function loadFavorites(): string[] {
   try {
     if (existsSync(FAVORITES_PATH)) {
-      const data = readFileSync(FAVORITES_PATH, 'utf-8');
+      const data = readFileSync(FAVORITES_PATH, "utf-8");
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed)) return parsed;
     }
   } catch (e) {
-    console.warn('⚠ Failed to load favorites:', (e as Error).message);
+    console.warn("⚠ Failed to load favorites:", (e as Error).message);
   }
   return [];
 }
 
 function saveFavorites(favorites: string[]): void {
   try {
-    writeFileSync(FAVORITES_PATH, JSON.stringify(favorites, null, 2), 'utf-8');
+    writeFileSync(FAVORITES_PATH, JSON.stringify(favorites, null, 2), "utf-8");
   } catch (e) {
-    console.error('❌ Failed to save favorites:', (e as Error).message);
+    console.error("❌ Failed to save favorites:", (e as Error).message);
   }
 }
 
 // In-memory log buffer
 interface LogEntry {
   timestamp: number;
-  level: 'info' | 'success' | 'warn' | 'error';
+  level: "info" | "success" | "warn" | "error";
   message: string;
 }
 
 const MAX_LOGS = 200;
 const logBuffer: LogEntry[] = [];
 
-function addLog(level: LogEntry['level'], message: string): void {
-  logBuffer.push({ timestamp: Date.now(), level, message });
+/** Redact potential secrets from log messages */
+const SECRET_PATTERNS = [
+  /sk-ant-[A-Za-z0-9_-]+/g,
+  /sk-[A-Za-z0-9_-]{20,}/g,
+  /gsk_[A-Za-z0-9_-]+/g,
+  /Bearer [A-Za-z0-9_.-]+/g,
+  /x-api-key:\s*[A-Za-z0-9_.-]+/gi,
+];
+
+function sanitizeLogMessage(message: string): string {
+  let sanitized = message;
+  for (const pattern of SECRET_PATTERNS) {
+    sanitized = sanitized.replace(pattern, "[REDACTED]");
+  }
+  return sanitized;
+}
+
+function addLog(level: LogEntry["level"], message: string): void {
+  logBuffer.push({
+    timestamp: Date.now(),
+    level,
+    message: sanitizeLogMessage(message),
+  });
   if (logBuffer.length > MAX_LOGS) {
     logBuffer.splice(0, logBuffer.length - MAX_LOGS);
   }
@@ -81,30 +102,50 @@ function hookConsole(): void {
 
   console.log = (...args: unknown[]) => {
     origLog.apply(console, args);
-    const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+    const msg = args
+      .map((a) => (typeof a === "string" ? a : JSON.stringify(a)))
+      .join(" ");
     // Classify message
     const lower = msg.toLowerCase();
-    if (lower.includes('error') || lower.includes('failed') || lower.includes('❌')) {
-      addLog('error', msg);
-    } else if (lower.includes('✅') || lower.includes('success') || lower.includes('completed')) {
-      addLog('success', msg);
-    } else if (lower.includes('⚠') || lower.includes('warn')) {
-      addLog('warn', msg);
+    if (
+      lower.includes("error") ||
+      lower.includes("failed") ||
+      lower.includes("❌")
+    ) {
+      addLog("error", msg);
+    } else if (
+      lower.includes("✅") ||
+      lower.includes("success") ||
+      lower.includes("completed")
+    ) {
+      addLog("success", msg);
+    } else if (lower.includes("⚠") || lower.includes("warn")) {
+      addLog("warn", msg);
     } else {
-      addLog('info', msg);
+      addLog("info", msg);
     }
   };
 
   console.error = (...args: unknown[]) => {
     origError.apply(console, args);
-    const msg = args.map(a => typeof a === 'string' ? a : (a instanceof Error ? a.message : JSON.stringify(a))).join(' ');
-    addLog('error', msg);
+    const msg = args
+      .map((a) =>
+        typeof a === "string"
+          ? a
+          : a instanceof Error
+            ? a.message
+            : JSON.stringify(a),
+      )
+      .join(" ");
+    addLog("error", msg);
   };
 
   console.warn = (...args: unknown[]) => {
     origWarn.apply(console, args);
-    const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
-    addLog('warn', msg);
+    const msg = args
+      .map((a) => (typeof a === "string" ? a : JSON.stringify(a)))
+      .join(" ");
+    addLog("warn", msg);
   };
 }
 
@@ -116,12 +157,51 @@ const confirmSchema = z.object({
   approved: z.boolean(),
 });
 
-export function createServer(agent: Agent, config: ClawdConfig): express.Express {
+export function createServer(
+  agent: Agent,
+  config: ClawdConfig,
+): express.Express {
   // Hook console to capture logs
   hookConsole();
 
   const app = express();
   app.use(express.json());
+
+  // Optional bearer token auth
+  if (config.server.authToken) {
+    const token = config.server.authToken;
+    app.use((req, res, next) => {
+      // Health endpoint is always public
+      if (req.path === "/health") return next();
+      // Dashboard is always public (runs in same browser)
+      if (req.method === "GET" && req.path === "/") return next();
+
+      const authHeader = req.headers.authorization;
+      if (!authHeader || authHeader !== `Bearer ${token}`) {
+        return res
+          .status(401)
+          .json({ error: "Unauthorized — provide Bearer token" });
+      }
+      next();
+    });
+    console.log(`🔒 Auth enabled — token: ${token.substring(0, 8)}...`);
+  }
+
+  // CSRF protection: reject non-localhost origins on state-changing requests
+  app.use((req, res, next) => {
+    if (req.method === "GET") return next();
+    const origin = req.headers.origin;
+    if (
+      origin &&
+      !origin.includes("localhost") &&
+      !origin.includes("127.0.0.1")
+    ) {
+      return res
+        .status(403)
+        .json({ error: "Cross-origin requests not allowed" });
+    }
+    next();
+  });
 
   // Mount the web dashboard at GET /
   mountDashboard(app);
@@ -129,12 +209,12 @@ export function createServer(agent: Agent, config: ClawdConfig): express.Express
   // --- Favorites endpoints ---
 
   // Get all favorites
-  app.get('/favorites', (_req, res) => {
+  app.get("/favorites", (_req, res) => {
     res.json(loadFavorites());
   });
 
   // Add a favorite
-  app.post('/favorites', (req, res) => {
+  app.post("/favorites", (req, res) => {
     const parsed = taskSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: 'Missing "task" string in body' });
@@ -149,7 +229,7 @@ export function createServer(agent: Agent, config: ClawdConfig): express.Express
   });
 
   // Remove a favorite
-  app.delete('/favorites', (req, res) => {
+  app.delete("/favorites", (req, res) => {
     const parsed = taskSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: 'Missing "task" string in body' });
@@ -158,7 +238,7 @@ export function createServer(agent: Agent, config: ClawdConfig): express.Express
     const trimmed = parsed.data.task;
     const idx = favorites.indexOf(trimmed);
     if (idx === -1) {
-      return res.status(404).json({ error: 'Favorite not found' });
+      return res.status(404).json({ error: "Favorite not found" });
     }
     favorites.splice(idx, 1);
     saveFavorites(favorites);
@@ -166,7 +246,7 @@ export function createServer(agent: Agent, config: ClawdConfig): express.Express
   });
 
   // Submit a task
-  app.post('/task', async (req, res) => {
+  app.post("/task", async (req, res) => {
     const parsed = taskSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: 'Missing "task" in body' });
@@ -174,9 +254,9 @@ export function createServer(agent: Agent, config: ClawdConfig): express.Express
 
     const { task } = parsed.data;
     const state = agent.getState();
-    if (state.status !== 'idle') {
+    if (state.status !== "idle") {
       return res.status(409).json({
-        error: 'Agent is busy',
+        error: "Agent is busy",
         state,
       });
     }
@@ -184,31 +264,36 @@ export function createServer(agent: Agent, config: ClawdConfig): express.Express
     console.log(`\n📨 New task received: ${task}`);
 
     // Execute async — respond immediately
-    agent.executeTask(task).then(result => {
-      console.log(`\n📋 Task result:`, JSON.stringify(result, null, 2));
-    }).catch(err => {
-      console.error(`\n❌ Task execution failed:`, err);
-    });
+    agent
+      .executeTask(task)
+      .then((result) => {
+        console.log(`\n📋 Task result:`, JSON.stringify(result, null, 2));
+      })
+      .catch((err) => {
+        console.error(`\n❌ Task execution failed:`, err);
+      });
 
     res.json({ accepted: true, task });
   });
 
   // Get current status
-  app.get('/status', (req, res) => {
+  app.get("/status", (req, res) => {
     res.json(agent.getState());
   });
 
   // Approve or reject a pending confirmation
-  app.post('/confirm', (req, res) => {
+  app.post("/confirm", (req, res) => {
     const parsed = confirmSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Missing "approved" boolean in body' });
+      return res
+        .status(400)
+        .json({ error: 'Missing "approved" boolean in body' });
     }
 
     const { approved } = parsed.data;
     const safety = agent.getSafety();
     if (!safety.hasPendingConfirmation()) {
-      return res.status(404).json({ error: 'No pending confirmation' });
+      return res.status(404).json({ error: "No pending confirmation" });
     }
 
     const pending = safety.getPendingAction();
@@ -221,35 +306,44 @@ export function createServer(agent: Agent, config: ClawdConfig): express.Express
   });
 
   // Abort current task
-  app.post('/abort', (req, res) => {
+  app.post("/abort", (req, res) => {
     agent.abort();
     res.json({ aborted: true });
   });
 
   // Get recent log entries
-  app.get('/logs', (req, res) => {
+  app.get("/logs", (req, res) => {
     res.json(logBuffer);
   });
 
   // Health check
-  app.get('/health', (req, res) => {
-    res.json({ status: 'ok', version: VERSION });
+  app.get("/health", (req, res) => {
+    res.json({ status: "ok", version: VERSION });
   });
 
   // Graceful shutdown (localhost only)
-  app.post('/stop', (req, res) => {
-    const ip = req.ip || req.socket.remoteAddress || '';
-    const isLocal = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+  app.post("/stop", (req, res) => {
+    const ip = req.ip || req.socket.remoteAddress || "";
+    const isLocal =
+      ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
     if (!isLocal) {
-      return res.status(403).json({ error: 'Stop is only allowed from localhost' });
+      return res
+        .status(403)
+        .json({ error: "Stop is only allowed from localhost" });
     }
 
     // Send response, then exit after it's flushed
-    const body = JSON.stringify({ stopped: true, message: 'Clawd Cursor stopped' });
-    res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
+    const body = JSON.stringify({
+      stopped: true,
+      message: "Clawd Cursor stopped",
+    });
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+      "Content-Length": Buffer.byteLength(body),
+    });
     res.end(body, () => {
       // Response fully flushed — now shut down
-      console.log('\n👋 Shutting down (stop command received)...');
+      console.log("\n👋 Shutting down (stop command received)...");
       agent.disconnect();
       // Force exit after short delay (covers Windows edge cases)
       setTimeout(() => process.exit(0), 500);

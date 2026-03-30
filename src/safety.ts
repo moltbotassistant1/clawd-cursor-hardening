@@ -3,8 +3,8 @@
  * and enforces confirmation/blocking rules.
  */
 
-import { SafetyTier } from './types';
-import type { ClawdConfig, InputAction } from './types';
+import { SafetyTier } from "./types";
+import type { ClawdConfig, InputAction } from "./types";
 
 export class SafetyLayer {
   private config: ClawdConfig;
@@ -24,22 +24,29 @@ export class SafetyLayer {
   classify(action: InputAction, description: string): SafetyTier {
     const text = description.toLowerCase();
 
-    // Check blocked patterns
-    for (const pattern of this.config.safety.blockedPatterns) {
-      if (new RegExp(pattern, 'i').test(text)) {
-        return SafetyTier.Confirm; // Will be blocked at confirm stage
+    // Check absolutely blocked patterns — these NEVER execute
+    for (const pattern of this.config.safety.absolutelyBlockedPatterns) {
+      if (new RegExp(pattern, "i").test(text)) {
+        return SafetyTier.Blocked;
+      }
+    }
+
+    // Check dangerous patterns — require confirmation
+    for (const pattern of this.config.safety.dangerousPatterns) {
+      if (new RegExp(pattern, "i").test(text)) {
+        return SafetyTier.Confirm;
       }
     }
 
     // Check confirm patterns
     for (const pattern of this.config.safety.confirmPatterns) {
-      if (new RegExp(pattern, 'i').test(text)) {
+      if (new RegExp(pattern, "i").test(text)) {
         return SafetyTier.Confirm;
       }
     }
 
     // Typing is preview tier (user can see what's being typed)
-    if ('text' in action && action.kind === 'type') {
+    if ("text" in action && action.kind === "type") {
       return SafetyTier.Preview;
     }
 
@@ -52,8 +59,8 @@ export class SafetyLayer {
    */
   isBlocked(description: string): boolean {
     const text = description.toLowerCase();
-    return this.config.safety.blockedPatterns.some(
-      pattern => new RegExp(pattern, 'i').test(text)
+    return this.config.safety.absolutelyBlockedPatterns.some((pattern) =>
+      new RegExp(pattern, "i").test(text),
     );
   }
 
@@ -61,7 +68,10 @@ export class SafetyLayer {
    * Request confirmation from user for a dangerous action.
    * Returns a promise that resolves when user responds.
    */
-  requestConfirmation(action: InputAction, description: string): Promise<boolean> {
+  requestConfirmation(
+    action: InputAction,
+    description: string,
+  ): Promise<boolean> {
     return new Promise((resolve) => {
       this.pendingConfirm = { resolve, action, description };
       console.log(`\n🔴 CONFIRMATION REQUIRED:`);
@@ -92,4 +102,3 @@ export class SafetyLayer {
     };
   }
 }
-
