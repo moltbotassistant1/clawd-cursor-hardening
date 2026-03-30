@@ -445,6 +445,23 @@ Options:
   --debug                Save screenshots to debug/ folder
 ```
 
+## Configuration Priority
+
+Clawd Cursor resolves configuration from multiple sources. Higher priority wins:
+
+1. **CLI flags** (`--provider`, `--model`, `--auth`) — highest priority
+2. **Environment variables** (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.)
+3. **Local config file** (`.clawd-config.json` in current directory, created by `clawd-cursor doctor`)
+4. **OpenClaw auth-profiles** (`~/.openclaw/agents/main/agent/auth-profiles.json`)
+5. **OpenClaw config** (`~/.openclaw/openclaw.json` — provider definitions, env block)
+6. **Auto-detection** (key format analysis, Ollama reachability) — lowest priority
+
+For AI provider selection specifically:
+- If `doctor` has been run, its saved provider choice takes precedence
+- If OpenClaw files exist, vision-capable providers are preferred
+- If only env vars exist, key format determines the provider
+- If nothing is configured, defaults to local Ollama
+
 ## Platform Support
 
 | Platform | UI Automation | Browser (CDP) | Status |
