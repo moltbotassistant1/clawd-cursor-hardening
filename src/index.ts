@@ -6,16 +6,17 @@
  * Your AI controls your desktop natively.
  */
 
-import { Command } from 'commander';
-import { Agent } from './agent';
-import { createServer } from './server';
-import { DEFAULT_CONFIG } from './types';
-import type { ClawdConfig } from './types';
-import { VERSION } from './version';
-import dotenv from 'dotenv';
-import { resolveApiConfig } from './openclaw-credentials';
-import * as fs from 'fs';
-import * as path from 'path';
+import { Command } from "commander";
+import { randomBytes } from "crypto";
+import { Agent } from "./agent";
+import { createServer } from "./server";
+import { DEFAULT_CONFIG } from "./types";
+import type { ClawdConfig } from "./types";
+import { VERSION } from "./version";
+import dotenv from "dotenv";
+import { resolveApiConfig } from "./openclaw-credentials";
+import * as fs from "fs";
+import * as path from "path";
 
 dotenv.config();
 
@@ -23,28 +24,32 @@ const program = new Command();
 
 async function isClawdInstance(port: number): Promise<boolean> {
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(2000) });
-    const data = await res.json() as any;
-    return data.status === 'ok' && typeof data.version === 'string';
+    const res = await fetch(`http://127.0.0.1:${port}/health`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    const data = (await res.json()) as any;
+    return data.status === "ok" && typeof data.version === "string";
   } catch {
     return false;
   }
 }
 
 async function forceKillPort(port: number): Promise<boolean> {
-  const { execSync } = await import('child_process');
-  const os = await import('os');
+  const { execSync } = await import("child_process");
+  const os = await import("os");
 
-  if (os.platform() === 'win32') {
+  if (os.platform() === "win32") {
     try {
       const output = execSync(
         `netstat -ano | findstr :${port} | findstr LISTENING`,
-        { encoding: 'utf-8' },
+        { encoding: "utf-8" },
       );
       const pids = new Set(
-        output.trim().split('\n')
-          .map(line => line.trim().split(/\s+/).pop())
-          .filter((pid): pid is string => !!pid && /^\d+$/.test(pid))
+        output
+          .trim()
+          .split("\n")
+          .map((line) => line.trim().split(/\s+/).pop())
+          .filter((pid): pid is string => !!pid && /^\d+$/.test(pid)),
       );
 
       if (pids.size === 0) return false;
@@ -59,7 +64,7 @@ async function forceKillPort(port: number): Promise<boolean> {
   }
 
   try {
-    execSync(`kill -9 $(lsof -ti tcp:${port})`, { shell: '/bin/sh' });
+    execSync(`kill -9 $(lsof -ti tcp:${port})`, { shell: "/bin/sh" });
     return true;
   } catch {
     return false;
@@ -67,33 +72,41 @@ async function forceKillPort(port: number): Promise<boolean> {
 }
 
 program
-  .name('clawd-cursor')
-  .description('🐾 AI Desktop Agent — native screen control')
+  .name("clawd-cursor")
+  .description("🐾 AI Desktop Agent — native screen control")
   .version(VERSION);
 
 program
-  .command('start')
-  .description('Start the Clawd Cursor agent')
-  .option('--port <port>', 'API server port', '3847')
-  .option('--provider <provider>', 'AI provider (auto-detected, or specify: anthropic|openai|ollama|kimi|groq|...)')
-  .option('--model <model>', 'Vision model to use')
-  .option('--text-model <model>', 'Text/reasoning model for Layer 2')
-  .option('--vision-model <model>', 'Vision model for Layer 3')
-  .option('--base-url <url>', 'Custom API base URL (OpenAI-compatible)')
-  .option('--api-key <key>', 'AI provider API key')
-  .option('--debug', 'Save screenshots to debug/ folder (off by default)')
+  .command("start")
+  .description("Start the Clawd Cursor agent")
+  .option("--port <port>", "API server port", "3847")
+  .option(
+    "--provider <provider>",
+    "AI provider (auto-detected, or specify: anthropic|openai|ollama|kimi|groq|...)",
+  )
+  .option("--model <model>", "Vision model to use")
+  .option("--text-model <model>", "Text/reasoning model for Layer 2")
+  .option("--vision-model <model>", "Vision model for Layer 3")
+  .option("--base-url <url>", "Custom API base URL (OpenAI-compatible)")
+  .option("--api-key <key>", "AI provider API key")
+  .option("--auth", "Enable bearer token authentication on REST API")
+  .option("--debug", "Save screenshots to debug/ folder (off by default)")
   .action(async (opts) => {
     // Auto-setup on first run
-    const configPath = path.join(__dirname, '..', '.clawd-config.json');
+    const configPath = path.join(__dirname, "..", ".clawd-config.json");
     if (!fs.existsSync(configPath)) {
-      console.log('🔍 First run — auto-detecting AI providers...\n');
-      const { quickSetup } = await import('./doctor');
+      console.log("🔍 First run — auto-detecting AI providers...\n");
+      const { quickSetup } = await import("./doctor");
       const pipeline = await quickSetup();
       if (pipeline) {
-        console.log('✅ Auto-configured! Run `clawdcursor doctor` to customize.\n');
+        console.log(
+          "✅ Auto-configured! Run `clawdcursor doctor` to customize.\n",
+        );
       } else {
-        console.log('⚠️  No AI providers found. Layer 1 (Action Router) will still work.');
-        console.log('   Run `clawdcursor doctor` to set up AI providers.\n');
+        console.log(
+          "⚠️  No AI providers found. Layer 1 (Action Router) will still work.",
+        );
+        console.log("   Run `clawdcursor doctor` to set up AI providers.\n");
       }
     }
 
@@ -108,17 +121,27 @@ program
       server: {
         ...DEFAULT_CONFIG.server,
         port: parseInt(opts.port),
+        ...(opts.auth ? { authToken: randomBytes(32).toString("hex") } : {}),
       },
       ai: {
-        provider: resolvedApi.provider || opts.provider || DEFAULT_CONFIG.ai.provider,
+        provider:
+          resolvedApi.provider || opts.provider || DEFAULT_CONFIG.ai.provider,
         apiKey: resolvedApi.apiKey,
         baseUrl: opts.baseUrl || resolvedApi.baseUrl,
         textBaseUrl: resolvedApi.textBaseUrl,
         textApiKey: resolvedApi.textApiKey,
         visionBaseUrl: resolvedApi.visionBaseUrl,
         visionApiKey: resolvedApi.visionApiKey,
-        model: opts.textModel || resolvedApi.textModel || opts.model || DEFAULT_CONFIG.ai.model,
-        visionModel: opts.visionModel || resolvedApi.visionModel || opts.model || DEFAULT_CONFIG.ai.visionModel,
+        model:
+          opts.textModel ||
+          resolvedApi.textModel ||
+          opts.model ||
+          DEFAULT_CONFIG.ai.model,
+        visionModel:
+          opts.visionModel ||
+          resolvedApi.visionModel ||
+          opts.model ||
+          DEFAULT_CONFIG.ai.visionModel,
       },
       debug: opts.debug || false,
     };
@@ -130,10 +153,16 @@ program
    ╚═══════════════════════════════════════╝
 `);
 
-    if (resolvedApi.source === 'openclaw') {
-      console.log('🔗 Using OpenClaw agent credentials for AI provider routing');
-      console.log(`   Text: ${resolvedApi.textModel || 'auto'} via ${resolvedApi.textBaseUrl || 'default'}`);
-      console.log(`   Vision: ${resolvedApi.visionModel || 'auto'} via ${resolvedApi.visionBaseUrl || 'default'}`);
+    if (resolvedApi.source === "openclaw") {
+      console.log(
+        "🔗 Using OpenClaw agent credentials for AI provider routing",
+      );
+      console.log(
+        `   Text: ${resolvedApi.textModel || "auto"} via ${resolvedApi.textBaseUrl || "default"}`,
+      );
+      console.log(
+        `   Vision: ${resolvedApi.visionModel || "auto"} via ${resolvedApi.visionBaseUrl || "default"}`,
+      );
     }
 
     const agent = new Agent(config);
@@ -142,17 +171,25 @@ program
       await agent.connect();
     } catch (err) {
       console.error(`\n❌ Failed to initialize native desktop control: ${err}`);
-      console.error(`\nThis usually means @nut-tree-fork/nut-js couldn't access the screen.`);
-      console.error(`Make sure you're running this on a desktop with a display.`);
+      console.error(
+        `\nThis usually means @nut-tree-fork/nut-js couldn't access the screen.`,
+      );
+      console.error(
+        `Make sure you're running this on a desktop with a display.`,
+      );
       process.exit(1);
     }
 
     // Start API server
     const app = createServer(agent, config);
     app.listen(config.server.port, config.server.host, () => {
-      console.log(`\n🌐 API server: http://${config.server.host}:${config.server.port}`);
+      console.log(
+        `\n🌐 API server: http://${config.server.host}:${config.server.port}`,
+      );
       console.log(`\nEndpoints:`);
-      console.log(`  POST /task     — {"task": "Open Chrome and go to github.com"}`);
+      console.log(
+        `  POST /task     — {"task": "Open Chrome and go to github.com"}`,
+      );
       console.log(`  GET  /status   — Agent state`);
       console.log(`  POST /confirm  — {"approved": true|false}`);
       console.log(`  POST /abort    — Stop current task`);
@@ -160,32 +197,38 @@ program
     });
 
     // Graceful shutdown
-    process.on('SIGINT', () => {
-      console.log('\n👋 Shutting down...');
+    process.on("SIGINT", () => {
+      console.log("\n👋 Shutting down...");
       agent.disconnect();
       process.exit(0);
     });
   });
 
 program
-  .command('doctor')
-  .description('🩺 Diagnose setup and auto-configure the pipeline')
-  .option('--provider <provider>', 'AI provider (auto-detected, or specify: anthropic|openai|ollama|kimi|groq|...)')
-  .option('--api-key <key>', 'AI provider API key')
-  .option('--no-save', 'Don\'t save config to disk')
-  .option('--reset', 'Delete saved config and re-detect everything from scratch')
+  .command("doctor")
+  .description("🩺 Diagnose setup and auto-configure the pipeline")
+  .option(
+    "--provider <provider>",
+    "AI provider (auto-detected, or specify: anthropic|openai|ollama|kimi|groq|...)",
+  )
+  .option("--api-key <key>", "AI provider API key")
+  .option("--no-save", "Don't save config to disk")
+  .option(
+    "--reset",
+    "Delete saved config and re-detect everything from scratch",
+  )
   .action(async (opts) => {
-    const { runDoctor } = await import('./doctor');
+    const { runDoctor } = await import("./doctor");
     const resolvedApi = resolveApiConfig({
       apiKey: opts.apiKey,
       provider: opts.provider,
     });
 
     if (opts.reset) {
-      const configPath = path.join(__dirname, '..', '.clawd-config.json');
+      const configPath = path.join(__dirname, "..", ".clawd-config.json");
       if (fs.existsSync(configPath)) {
         fs.unlinkSync(configPath);
-        console.log('🗑️  Cleared saved config — re-detecting from scratch\n');
+        console.log("🗑️  Cleared saved config — re-detecting from scratch\n");
       }
     }
 
@@ -194,7 +237,7 @@ program
     const isExplicit = !!(opts.apiKey || opts.provider);
     await runDoctor({
       apiKey: isExplicit ? resolvedApi.apiKey : undefined,
-      provider: isExplicit ? (resolvedApi.provider || opts.provider) : undefined,
+      provider: isExplicit ? resolvedApi.provider || opts.provider : undefined,
       baseUrl: isExplicit ? resolvedApi.baseUrl : undefined,
       textModel: isExplicit ? resolvedApi.textModel : undefined,
       visionModel: isExplicit ? resolvedApi.visionModel : undefined,
@@ -203,36 +246,42 @@ program
   });
 
 program
-  .command('stop')
-  .description('Stop a running Clawd Cursor instance')
-  .option('--port <port>', 'API server port', '3847')
+  .command("stop")
+  .description("Stop a running Clawd Cursor instance")
+  .option("--port <port>", "API server port", "3847")
   .action(async (opts) => {
     const port = parseInt(opts.port, 10);
     if (isNaN(port) || port < 1 || port > 65535) {
-      console.error('Invalid port number');
+      console.error("Invalid port number");
       process.exit(1);
     }
     const isClawd = await isClawdInstance(port);
     if (!isClawd) {
-      console.log('🐾 No running instance found on port ' + port);
+      console.log("🐾 No running instance found on port " + port);
       return;
     }
 
     // Abort first so any active task exits quickly before shutdown.
     try {
-      await fetch(`http://127.0.0.1:${port}/abort`, { method: 'POST', signal: AbortSignal.timeout(2000) });
+      await fetch(`http://127.0.0.1:${port}/abort`, {
+        method: "POST",
+        signal: AbortSignal.timeout(2000),
+      });
     } catch {
       // Best effort only.
     }
 
     const url = `http://127.0.0.1:${port}/stop`;
     try {
-      const res = await fetch(url, { method: 'POST', signal: AbortSignal.timeout(5000) });
-      const data = await res.json() as any;
+      const res = await fetch(url, {
+        method: "POST",
+        signal: AbortSignal.timeout(5000),
+      });
+      const data = (await res.json()) as any;
       if (data.stopped) {
-        console.log('🐾 Clawd Cursor stopped');
+        console.log("🐾 Clawd Cursor stopped");
       } else {
-        console.error('Unexpected response:', JSON.stringify(data));
+        console.error("Unexpected response:", JSON.stringify(data));
       }
     } catch {
       // fetch may fail because server died mid-response — that's actually success
@@ -240,29 +289,33 @@ program
 
     // Verify it actually stopped (wait up to 3s)
     for (let i = 0; i < 6; i++) {
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 500));
       try {
-        await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(1000) });
+        await fetch(`http://127.0.0.1:${port}/health`, {
+          signal: AbortSignal.timeout(1000),
+        });
         // Still alive — keep waiting
       } catch {
         // Connection refused = dead = success
-        console.log('✅ Server confirmed stopped');
+        console.log("✅ Server confirmed stopped");
         return;
       }
     }
-    console.log('⚠️  Graceful stop did not complete — force killing...');
+    console.log("⚠️  Graceful stop did not complete — force killing...");
     const killed = await forceKillPort(port);
     if (killed) {
-      console.log('🐾 Clawd Cursor force stopped');
+      console.log("🐾 Clawd Cursor force stopped");
     } else {
-      console.error('❌ Could not force stop process on port ' + port);
+      console.error("❌ Could not force stop process on port " + port);
     }
   });
 
 program
-  .command('task [text]')
-  .description('Send a task to a running Clawd Cursor instance (interactive if no text given)')
-  .option('--port <port>', 'API server port', '3847')
+  .command("task [text]")
+  .description(
+    "Send a task to a running Clawd Cursor instance (interactive if no text given)",
+  )
+  .option("--port <port>", "API server port", "3847")
   .action(async (text, opts) => {
     const url = `http://127.0.0.1:${opts.port}/task`;
 
@@ -270,15 +323,15 @@ program
       try {
         console.log(`\n🐾 Sending: ${taskText}`);
         const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ task: taskText }),
         });
         const data = await res.json();
         console.log(JSON.stringify(data, null, 2));
       } catch {
         console.error(`Failed to connect to Clawd Cursor at ${url}`);
-        console.error('Is the agent running? Start it with: clawdcursor start');
+        console.error("Is the agent running? Start it with: clawdcursor start");
       }
     };
 
@@ -287,13 +340,14 @@ program
       await sendTask(text);
     } else {
       // Interactive mode: spawn a new terminal window
-      const os = await import('os');
-      const { execFile: spawnExec } = await import('child_process');
+      const os = await import("os");
+      const { execFile: spawnExec } = await import("child_process");
       const platform = os.platform();
 
-      const scriptContent = platform === 'win32'
-        ? // Windows: PowerShell script
-          `
+      const scriptContent =
+        platform === "win32"
+          ? // Windows: PowerShell script
+            `
 $host.UI.RawUI.WindowTitle = "Clawd Cursor - Task Console"
 Write-Host "Clawd Cursor - Interactive Task Mode" -ForegroundColor Cyan
 Write-Host "   Type a task and press Enter. Type 'quit' to exit." -ForegroundColor Gray
@@ -314,8 +368,8 @@ while ($true) {
     Write-Host ""
 }
 `
-        : // macOS/Linux: bash script
-          `
+          : // macOS/Linux: bash script
+            `
 echo "🐾 Clawd Cursor — Interactive Task Mode"
 echo "   Type a task and press Enter. Type 'quit' to exit."
 echo ""
@@ -332,49 +386,65 @@ while true; do
 done
 `;
 
-      if (platform === 'win32') {
+      if (platform === "win32") {
         // Write temp PS1 and open in new Windows Terminal / PowerShell window
-        const fs = await import('fs');
-        const path = await import('path');
-        const tmpScript = path.join(os.tmpdir(), `clawd-task-${Date.now()}.ps1`);
+        const fs = await import("fs");
+        const path = await import("path");
+        const tmpScript = path.join(
+          os.tmpdir(),
+          `clawd-task-${Date.now()}.ps1`,
+        );
         fs.writeFileSync(tmpScript, scriptContent);
-        spawnExec('powershell.exe', [
-          '-Command', `Start-Process powershell -ArgumentList '-NoExit','-ExecutionPolicy','Bypass','-File','${tmpScript}'`
-        ], { detached: true, stdio: 'ignore' } as any);
-      } else if (platform === 'darwin') {
-        const fs = await import('fs');
-        const path = await import('path');
+        spawnExec(
+          "powershell.exe",
+          [
+            "-Command",
+            `Start-Process powershell -ArgumentList '-NoExit','-ExecutionPolicy','Bypass','-File','${tmpScript}'`,
+          ],
+          { detached: true, stdio: "ignore" } as any,
+        );
+      } else if (platform === "darwin") {
+        const fs = await import("fs");
+        const path = await import("path");
         const tmpScript = path.join(os.tmpdir(), `clawd-task-${Date.now()}.sh`);
         fs.writeFileSync(tmpScript, scriptContent, { mode: 0o755 });
-        spawnExec('open', ['-a', 'Terminal', tmpScript], { detached: true, stdio: 'ignore' } as any);
+        spawnExec("open", ["-a", "Terminal", tmpScript], {
+          detached: true,
+          stdio: "ignore",
+        } as any);
       } else {
         // Linux fallback
-        const fs = await import('fs');
-        const path = await import('path');
+        const fs = await import("fs");
+        const path = await import("path");
         const tmpScript = path.join(os.tmpdir(), `clawd-task-${Date.now()}.sh`);
         fs.writeFileSync(tmpScript, scriptContent, { mode: 0o755 });
-        spawnExec('x-terminal-emulator', ['-e', tmpScript], { detached: true, stdio: 'ignore' } as any);
+        spawnExec("x-terminal-emulator", ["-e", tmpScript], {
+          detached: true,
+          stdio: "ignore",
+        } as any);
       }
 
-      console.log('🐾 Task console opened in a new terminal window.');
+      console.log("🐾 Task console opened in a new terminal window.");
     }
   });
 
 program
-  .command('dashboard')
-  .description('Open the Clawd Cursor web dashboard in your browser')
-  .option('--port <port>', 'API server port', '3847')
+  .command("dashboard")
+  .description("Open the Clawd Cursor web dashboard in your browser")
+  .option("--port <port>", "API server port", "3847")
   .action(async (opts) => {
     const url = `http://127.0.0.1:${opts.port}`;
-    console.log('🐾 Opening dashboard... Make sure clawdcursor start is running.');
+    console.log(
+      "🐾 Opening dashboard... Make sure clawdcursor start is running.",
+    );
 
-    const os = await import('os');
-    const { exec: execCmd } = await import('child_process');
+    const os = await import("os");
+    const { exec: execCmd } = await import("child_process");
     const platform = os.platform();
 
-    if (platform === 'win32') {
+    if (platform === "win32") {
       execCmd(`start ${url}`);
-    } else if (platform === 'darwin') {
+    } else if (platform === "darwin") {
       execCmd(`open ${url}`);
     } else {
       execCmd(`xdg-open ${url}`);
@@ -382,74 +452,82 @@ program
   });
 
 program
-  .command('kill')
-  .description('Force kill a running Clawd Cursor instance')
-  .option('--port <port>', 'API server port', '3847')
+  .command("kill")
+  .description("Force kill a running Clawd Cursor instance")
+  .option("--port <port>", "API server port", "3847")
   .action(async (opts) => {
     // Validate port is numeric to prevent command injection
     const port = parseInt(opts.port, 10);
     if (isNaN(port) || port < 1 || port > 65535) {
-      console.error('Invalid port number');
+      console.error("Invalid port number");
       process.exit(1);
     }
 
     // Verify it's actually a Clawd Cursor instance before killing
     const isClawd = await isClawdInstance(port);
     if (!isClawd) {
-      console.log('🐾 No running instance found on port ' + port);
+      console.log("🐾 No running instance found on port " + port);
       return;
     }
 
     // Try graceful stop
     try {
-      await fetch(`http://127.0.0.1:${port}/stop`, { method: 'POST', signal: AbortSignal.timeout(3000) });
+      await fetch(`http://127.0.0.1:${port}/stop`, {
+        method: "POST",
+        signal: AbortSignal.timeout(3000),
+      });
     } catch {
       // May fail if server dies mid-response — that's OK
     }
 
     // Wait and verify it died
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise((r) => setTimeout(r, 1500));
 
     try {
-      await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(1000) });
+      await fetch(`http://127.0.0.1:${port}/health`, {
+        signal: AbortSignal.timeout(1000),
+      });
       // Still alive — force kill
-      console.log('⚠️  Graceful stop failed — force killing...');
+      console.log("⚠️  Graceful stop failed — force killing...");
       const killed = await forceKillPort(port);
       if (killed) {
-        console.log('🐾 Clawd Cursor force killed');
+        console.log("🐾 Clawd Cursor force killed");
       } else {
-        console.error('Could not find process to kill');
+        console.error("Could not find process to kill");
       }
     } catch {
       // Connection refused = dead = success
-      console.log('🐾 Clawd Cursor killed');
+      console.log("🐾 Clawd Cursor killed");
     }
   });
 
 program
-  .command('install')
-  .description('Register Clawd Cursor as an OpenClaw skill and save config')
-  .option('--api-key <key>', 'AI provider API key')
-  .option('--provider <provider>', 'AI provider (auto-detected, or specify: anthropic|openai|ollama|kimi|groq|...)')
+  .command("install")
+  .description("Register Clawd Cursor as an OpenClaw skill and save config")
+  .option("--api-key <key>", "AI provider API key")
+  .option(
+    "--provider <provider>",
+    "AI provider (auto-detected, or specify: anthropic|openai|ollama|kimi|groq|...)",
+  )
   .action(async (opts) => {
-    const fs = await import('fs');
-    const path = await import('path');
-    const os = await import('os');
+    const fs = await import("fs");
+    const path = await import("path");
+    const os = await import("os");
 
-    console.log('\n🐾 Installing Clawd Cursor...\n');
+    console.log("\n🐾 Installing Clawd Cursor...\n");
 
-    const clawdRoot = path.resolve(__dirname, '..');
+    const clawdRoot = path.resolve(__dirname, "..");
 
     // 1. Save API key to .env if provided
     if (opts.apiKey) {
-      const envPath = path.join(clawdRoot, '.env');
+      const envPath = path.join(clawdRoot, ".env");
       const envContent = `AI_API_KEY=${opts.apiKey}\n`;
       fs.writeFileSync(envPath, envContent);
-      console.log('   ✅ API key saved to .env');
+      console.log("   ✅ API key saved to .env");
     }
 
     // 2. Run doctor (auto-configures pipeline + registers OpenClaw skill)
-    const { runDoctor } = await import('./doctor');
+    const { runDoctor } = await import("./doctor");
     const resolvedApi = resolveApiConfig({
       apiKey: opts.apiKey,
       provider: opts.provider,
@@ -463,38 +541,46 @@ program
       save: true,
     });
 
-    console.log('\n🐾 Installation complete! Run: clawdcursor start');
+    console.log("\n🐾 Installation complete! Run: clawdcursor start");
   });
 
 program
-  .command('uninstall')
-  .description('Remove all Clawd Cursor config, data, and OpenClaw skill registration')
+  .command("uninstall")
+  .description(
+    "Remove all Clawd Cursor config, data, and OpenClaw skill registration",
+  )
   .action(async () => {
-    const fs = await import('fs');
-    const path = await import('path');
-    const os = await import('os');
-    const readline = await import('readline');
+    const fs = await import("fs");
+    const path = await import("path");
+    const os = await import("os");
+    const readline = await import("readline");
 
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
     const answer = await new Promise<string>((resolve) => {
-      rl.question('\n⚠️  This will remove all Clawd Cursor config and data. Continue? (y/N) ', resolve);
+      rl.question(
+        "\n⚠️  This will remove all Clawd Cursor config and data. Continue? (y/N) ",
+        resolve,
+      );
     });
     rl.close();
 
-    if (answer.toLowerCase() !== 'y') {
-      console.log('Cancelled.');
+    if (answer.toLowerCase() !== "y") {
+      console.log("Cancelled.");
       return;
     }
 
-    console.log('\n🗑️  Uninstalling Clawd Cursor...\n');
-    const clawdRoot = path.resolve(__dirname, '..');
+    console.log("\n🗑️  Uninstalling Clawd Cursor...\n");
+    const clawdRoot = path.resolve(__dirname, "..");
     let removed = 0;
 
     // 1. Remove config files
     const configFiles = [
-      path.join(clawdRoot, '.clawd-config.json'),
-      path.join(clawdRoot, '.clawd-favorites.json'),
-      path.join(clawdRoot, '.env'),
+      path.join(clawdRoot, ".clawd-config.json"),
+      path.join(clawdRoot, ".clawd-favorites.json"),
+      path.join(clawdRoot, ".env"),
     ];
     for (const f of configFiles) {
       if (fs.existsSync(f)) {
@@ -505,18 +591,18 @@ program
     }
 
     // 2. Remove debug folder
-    const debugDir = path.join(clawdRoot, 'debug');
+    const debugDir = path.join(clawdRoot, "debug");
     if (fs.existsSync(debugDir)) {
       fs.rmSync(debugDir, { recursive: true, force: true });
-      console.log('   🗑️  Removed debug/');
+      console.log("   🗑️  Removed debug/");
       removed++;
     }
 
     // 3. Remove OpenClaw skill registration
     const homeDir = os.homedir();
     const skillPaths = [
-      path.join(homeDir, '.openclaw', 'workspace', 'skills', 'clawdcursor'),
-      path.join(homeDir, '.openclaw-dev', 'workspace', 'skills', 'clawdcursor'),
+      path.join(homeDir, ".openclaw", "workspace", "skills", "clawdcursor"),
+      path.join(homeDir, ".openclaw-dev", "workspace", "skills", "clawdcursor"),
     ];
     for (const sp of skillPaths) {
       if (fs.existsSync(sp)) {
@@ -532,18 +618,20 @@ program
     }
 
     // 4. Remove dist folder
-    const distDir = path.join(clawdRoot, 'dist');
+    const distDir = path.join(clawdRoot, "dist");
     if (fs.existsSync(distDir)) {
       fs.rmSync(distDir, { recursive: true, force: true });
-      console.log('   🗑️  Removed dist/');
+      console.log("   🗑️  Removed dist/");
       removed++;
     }
 
     if (removed === 0) {
-      console.log('   Nothing to clean up.');
+      console.log("   Nothing to clean up.");
     }
 
-    console.log(`\n🐾 Uninstalled. To fully remove, delete the clawd-cursor folder:`);
+    console.log(
+      `\n🐾 Uninstalled. To fully remove, delete the clawd-cursor folder:`,
+    );
     console.log(`   ${clawdRoot}\n`);
   });
 

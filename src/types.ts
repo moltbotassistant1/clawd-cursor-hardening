@@ -82,6 +82,8 @@ export interface ClawdConfig {
   server: {
     port: number;
     host: string;
+    /** Optional bearer token for API auth. Generated at startup if --auth flag used. */
+    authToken?: string;
   };
   ai: {
     provider: string;

@@ -167,6 +167,26 @@ export function createServer(
   const app = express();
   app.use(express.json());
 
+  // Optional bearer token auth
+  if (config.server.authToken) {
+    const token = config.server.authToken;
+    app.use((req, res, next) => {
+      // Health endpoint is always public
+      if (req.path === "/health") return next();
+      // Dashboard is always public (runs in same browser)
+      if (req.method === "GET" && req.path === "/") return next();
+
+      const authHeader = req.headers.authorization;
+      if (!authHeader || authHeader !== `Bearer ${token}`) {
+        return res
+          .status(401)
+          .json({ error: "Unauthorized — provide Bearer token" });
+      }
+      next();
+    });
+    console.log(`🔒 Auth enabled — token: ${token.substring(0, 8)}...`);
+  }
+
   // Mount the web dashboard at GET /
   mountDashboard(app);
 
